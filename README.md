@@ -95,7 +95,7 @@ The system is not restricted to airport flights:
 
 ---
 
-## 🔒 Concurrency, Data Integrity & Viva Questions
+
 
 ### 1. Does the Redis lock release safely?
 * **Problem**: In a simple `GET lock` followed by `DEL lock`, the lock could expire right after the `GET`. Another worker acquires it, and the first worker inadvertently deletes the second worker's lock!
