@@ -1,0 +1,61 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cab-sharing-service
+
+  # PostgreSQL Configuration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cabpool?options=-c%20timezone=Asia/Kolkata
+    username: cabpool
+    password: cabpool
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-init-sql: SET TIME ZONE 'Asia/Kolkata'
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  # Redis Configuration (In-Memory Pool & Distributed Locks)
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3000ms
+
+  # Apache Kafka Configuration (5 Event Streaming Topics)
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: true
+    consumer:
+      group-id: cabpool-modular-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: "com.cabpool.*"
+
+# Custom App Properties - 5 Core Event Topics
+cabpool:
+  kafka:
+    topics:
+      ride-requested: cabpool.ride.requested
+      ride-matched: cabpool.ride.matched
+      ride-confirmed: cabpool.ride.confirmed
+      ride-cancelled: cabpool.ride.cancelled
+      event-delayed: cabpool.event.delayed
+  matching:
+    max-group-size: 4
+    min-group-size: 2
+    max-wait-overlap-minutes: 30
+    lock-timeout-seconds: 10
