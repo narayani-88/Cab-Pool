@@ -30,4 +30,6 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, UUID> 
     );
 
     Optional<RideRequest> findByEventIdentifierAndStatus(String eventIdentifier, RideRequestStatus status);
+
+    long countByStatus(RideRequestStatus status);
 }

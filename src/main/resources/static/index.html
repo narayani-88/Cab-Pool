@@ -1,352 +1,773 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CabPool - Event & Venue Ride Sharing Architecture</title>
+    <title>CabPool - Distributed Event-Driven Ride Sharing Architecture</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#f0fdf4', 500: '#10b981', 600: '#059669', 700: '#047857' },
+                        dark: { 950: '#06090e', 900: '#0c121e', 800: '#131d31', 700: '#1e293b' }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- SockJS and STOMP -->
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg: #0f172a;
-            --card-bg: #1e293b;
-            --border: #334155;
-            --accent: #38bdf8;
-            --accent-green: #4ade80;
-            --accent-amber: #f59e0b;
-            --accent-rose: #f43f5e;
-            --text: #f8fafc;
-            --text-muted: #94a3b8;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background: var(--bg); color: var(--text); padding: 24px; }
-        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; }
-        h1 { font-size: 1.5rem; color: var(--accent); }
-        .status-badge { padding: 4px 12px; border-radius: 9999px; font-size: 0.85rem; font-weight: 600; }
-        .status-connected { background: rgba(74, 222, 128, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
-        .status-disconnected { background: rgba(244, 63, 94, 0.2); color: var(--accent-rose); border: 1px solid var(--accent-rose); }
-        
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
-        .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-        .card h2 { font-size: 1.15rem; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-        
-        .form-group { margin-bottom: 10px; }
-        label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 3px; }
-        input, select { width: 100%; padding: 8px 10px; background: #0f172a; border: 1px solid var(--border); color: #fff; border-radius: 6px; font-size: 0.88rem; }
-        button { width: 100%; padding: 9px; background: #0284c7; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 6px; }
-        button:hover { background: #0369a1; }
-        button.btn-green { background: #16a34a; }
-        button.btn-green:hover { background: #15803d; }
-        button.btn-rose { background: #e11d48; }
-        button.btn-rose:hover { background: #be123c; }
-        button.btn-amber { background: #d97706; }
-        button.btn-amber:hover { background: #b45309; }
-        
-        .feed { height: 260px; overflow-y: auto; background: #0b1120; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 0.85rem; border: 1px solid var(--border); }
-        .feed-entry { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #1e293b; line-height: 1.4; }
-        .time { color: var(--text-muted); margin-right: 6px; }
-        .tag-match { color: var(--accent-green); font-weight: bold; }
-        .tag-cancel { color: var(--accent-rose); font-weight: bold; }
-        .tag-delay { color: var(--accent-amber); font-weight: bold; }
-        .tag-info { color: var(--accent); font-weight: bold; }
-        
-        .banner { background: #1e293b; border-left: 4px solid var(--accent); padding: 12px 16px; margin-bottom: 20px; border-radius: 0 8px 8px 0; font-size: 0.9rem; }
-        .topics-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-        .topic-pill { background: #0f172a; border: 1px solid var(--border); padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; color: var(--text-muted); font-family: monospace; }
-        .topic-pill span { color: var(--accent); font-weight: 600; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #080d1a; color: #f1f5f9; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .glass-card { background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glass-card-hover:hover { border-color: rgba(56, 189, 248, 0.35); box-shadow: 0 0 25px -5px rgba(56, 189, 248, 0.15); }
+        .gradient-border { position: relative; border-radius: 1rem; background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(16, 185, 129, 0.2)); padding: 1px; }
+        .pulse-dot { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(0.9); } }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0c121e; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
     </style>
 </head>
-<body>
+<body class="min-h-screen flex flex-col selection:bg-sky-500 selection:text-white">
 
-<header>
-    <div>
-        <h1>🚖 CabPool: Venue & Event Distributed Ride-Sharing</h1>
-        <p style="color: var(--text-muted); font-size: 0.85rem;">Modular Monolith Architecture • 5 Kafka Topics • Redis Redlock • PostgreSQL System of Record</p>
-    </div>
-    <span id="wsStatus" class="status-badge status-disconnected">WebSocket: Disconnected</span>
-</header>
+    <!-- Top Navigation Bar -->
+    <nav class="sticky top-0 z-50 glass-card border-b border-slate-800/80 px-6 py-3.5">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            <!-- Brand -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-sky-500/20">
+                    <i data-lucide="car" class="w-5 h-5 text-slate-950 font-bold"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">CabPool</span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Live Event Bus</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Spring Boot 3 • Kafka 5 Topics • Redis Redlock • PostgreSQL</p>
+                </div>
+            </div>
 
-<div class="topics-bar">
-    <div class="topic-pill">Topic 1: <span>cabpool.ride.requested</span></div>
-    <div class="topic-pill">Topic 2: <span>cabpool.ride.matched</span></div>
-    <div class="topic-pill">Topic 3: <span>cabpool.ride.confirmed</span></div>
-    <div class="topic-pill">Topic 4: <span>cabpool.ride.cancelled</span></div>
-    <div class="topic-pill">Topic 5: <span>cabpool.event.delayed</span></div>
-</div>
+            <!-- Health Indicator Badges -->
+            <div class="flex items-center gap-2 flex-wrap text-xs font-mono">
+                <div id="wsBadge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 transition-colors">
+                    <span class="w-2 h-2 rounded-full bg-rose-400 pulse-dot"></span>
+                    <span id="wsText">WebSocket: Connecting</span>
+                </div>
+                <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60">
+                    <i data-lucide="layers" class="w-3.5 h-3.5 text-sky-400"></i>
+                    <span>Kafka (5 Topics)</span>
+                </div>
+                <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/60">
+                    <i data-lucide="lock" class="w-3.5 h-3.5 text-amber-400"></i>
+                    <span>Redis Redlock (Lua)</span>
+                </div>
+            </div>
 
-<div class="banner">
-    <strong>5-Topic Interactive Demo:</strong>
-    1. Request ride for Priya and Ananya (same venue & zone) $\rightarrow$ Watch the Matcher match them over Kafka & Redis.<br>
-    2. Accept match or click <strong>Cancel</strong> to watch the remaining rider automatically re-enter the pool for <strong>re-matching</strong>!<br>
-    3. Simulate concert/flight delay to see target arrival times shift dynamically.
-</div>
-
-<div class="grid">
-    <!-- Rider A Panel -->
-    <div class="card">
-        <h2>👤 Rider A: Priya Sharma (Verified)</h2>
-        <div class="form-group">
-            <label>Venue & Direction</label>
-            <div style="display:flex; gap:6px;">
-                <select id="riderA_venue">
-                    <option value="KIA_AIRPORT">KIA Airport</option>
-                    <option value="CHINNASWAMY_STADIUM">Chinnaswamy Stadium</option>
-                    <option value="MANYATA_TECH_PARK">Manyata Tech Park</option>
-                </select>
-                <select id="riderA_direction" style="width: 45%;">
-                    <option value="FROM_VENUE">From Venue</option>
-                    <option value="TO_VENUE">To Venue</option>
-                </select>
+            <!-- Global Action Controls -->
+            <div class="flex items-center gap-2">
+                <button onclick="triggerFlightBurst()" class="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-md shadow-sky-500/20 transition-all cursor-pointer">
+                    <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                    <span>Simulate Flight Landing (10 Riders)</span>
+                </button>
+                <button onclick="resetSystemData()" title="Clear requests and Redis pool" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
             </div>
         </div>
-        <div class="form-group">
-            <label>Event / Schedule Name</label>
-            <input id="riderA_event" value="Flight 6E-204">
-        </div>
-        <div class="form-group">
-            <label>Drop Zone</label>
-            <input id="riderA_zone" value="HSR" readonly>
-        </div>
-        <div class="form-group">
-            <label>Preference</label>
-            <input id="riderA_pref" value="WOMEN_ONLY" readonly>
-        </div>
-        <button onclick="requestRideA()">1. Request Ride (Priya)</button>
-        <button id="btnAcceptA" style="display:none;" class="btn-green" onclick="acceptGroup('A')">✓ Accept Match (Priya)</button>
-        <button id="btnCancelA" style="display:none;" class="btn-rose" onclick="cancelRide('A')">✕ Cancel Request (Triggers Re-matching)</button>
-    </div>
+    </nav>
 
-    <!-- Rider B Panel -->
-    <div class="card">
-        <h2>👤 Rider B: Ananya Iyer (Verified)</h2>
-        <div class="form-group">
-            <label>Venue & Direction</label>
-            <div style="display:flex; gap:6px;">
-                <select id="riderB_venue">
-                    <option value="KIA_AIRPORT">KIA Airport</option>
-                    <option value="CHINNASWAMY_STADIUM">Chinnaswamy Stadium</option>
-                    <option value="MANYATA_TECH_PARK">Manyata Tech Park</option>
-                </select>
-                <select id="riderB_direction" style="width: 45%;">
-                    <option value="FROM_VENUE">From Venue</option>
-                    <option value="TO_VENUE">To Venue</option>
-                </select>
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto w-full px-6 py-6 space-y-6 flex-1">
+
+        <!-- Architecture Metrics HUD (4 KPI Cards) -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="glass-card rounded-2xl p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Total Requests</span>
+                    <i data-lucide="users" class="w-4 h-4 text-sky-400"></i>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span id="metricTotalRequests" class="text-2xl font-bold font-mono text-white">0</span>
+                    <span class="text-xs text-slate-400">ingested</span>
+                </div>
+                <div class="mt-2 text-[11px] text-slate-400 flex gap-2 font-mono">
+                    <span class="text-emerald-400"><span id="metricMatchedRequests">0</span> matched</span>
+                    <span>•</span>
+                    <span class="text-sky-400"><span id="metricOpenRequests">0</span> open</span>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Redis Pool Queue</span>
+                    <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span id="metricPoolCandidates" class="text-2xl font-bold font-mono text-emerald-400">0</span>
+                    <span class="text-xs text-slate-400">active in-memory</span>
+                </div>
+                <div id="metricZoneBreakdown" class="mt-2 text-[11px] text-slate-400 truncate font-mono">
+                    Spatial buckets: HSR, Whitefield...
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Formed Cabpools</span>
+                    <i data-lucide="car-taxi-front" class="w-4 h-4 text-amber-400"></i>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span id="metricTotalGroups" class="text-2xl font-bold font-mono text-white">0</span>
+                    <span class="text-xs text-slate-400">groups formed</span>
+                </div>
+                <div class="mt-2 text-[11px] text-slate-400 flex gap-2 font-mono">
+                    <span class="text-emerald-400"><span id="metricConfirmedGroups">0</span> confirmed</span>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Avg Kafka Ingestion</span>
+                    <i data-lucide="gauge" class="w-4 h-4 text-violet-400"></i>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span id="metricLatency" class="text-2xl font-bold font-mono text-violet-400">~14</span>
+                    <span class="text-xs text-slate-400">ms measured</span>
+                </div>
+                <div class="mt-2 text-[11px] text-slate-400 font-mono">
+                    Non-blocking async matching
+                </div>
             </div>
         </div>
-        <div class="form-group">
-            <label>Event / Schedule Name</label>
-            <input id="riderB_event" value="Coldplay Concert">
-        </div>
-        <div class="form-group">
-            <label>Drop Zone</label>
-            <input id="riderB_zone" value="HSR" readonly>
-        </div>
-        <div class="form-group">
-            <label>Preference</label>
-            <input id="riderB_pref" value="WOMEN_ONLY" readonly>
-        </div>
-        <button onclick="requestRideB()">2. Request Ride (Ananya)</button>
-        <button id="btnAcceptB" style="display:none;" class="btn-green" onclick="acceptGroup('B')">✓ Accept Match (Ananya)</button>
-        <button id="btnCancelB" style="display:none;" class="btn-rose" onclick="cancelRide('B')">✕ Cancel Request (Triggers Re-matching)</button>
-    </div>
 
-    <!-- Event Delay Service Panel -->
-    <div class="card">
-        <h2>⏱️ Event Tracking Service (Delays)</h2>
-        <div class="form-group">
-            <label>Event Identifier</label>
-            <input id="delayEventId" value="Flight 6E-204">
+        <!-- Persona / Rider Switcher (Identity Bar) -->
+        <div class="glass-card rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                    <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                        <i data-lucide="user-check" class="w-4 h-4 text-sky-400"></i>
+                        <span>Select Active Rider Persona</span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Switch identity to simulate multiple passengers matching into shared cabs.</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs font-mono">
+                    <span class="text-slate-400">Active Profile:</span>
+                    <span id="activePersonaBadge" class="px-2.5 py-1 rounded-md bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Dynamic Persona Cards Container -->
+            <div id="personaContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 pt-1">
+                <!-- Dynamically populated via JS -->
+            </div>
         </div>
-        <div class="form-group">
-            <label>Delay (Minutes)</label>
-            <input id="delayMinutes" type="number" value="30">
+
+        <!-- Main Workspace Grid: Booking & Active Matcher -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Left Column (5 Cols): Ride Request & Event Delay Form -->
+            <div class="lg:col-span-5 space-y-6">
+
+                <!-- Booking Console -->
+                <div class="glass-card rounded-2xl p-6 space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <h3 class="font-bold text-base text-white flex items-center gap-2">
+                            <i data-lucide="send" class="w-4 h-4 text-emerald-400"></i>
+                            <span>Request Shared Cab</span>
+                        </h3>
+                        <span class="text-[11px] font-mono text-slate-400">Topic: cabpool.ride.requested</span>
+                    </div>
+
+                    <!-- Hub / Venue Selector -->
+                    <div class="space-y-1.5">
+                        <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-sky-400"></i>
+                            <span>Venue / Hub</span>
+                        </label>
+                        <select id="formVenue" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500 transition-colors">
+                            <option value="KIA_AIRPORT">✈️ Kempegowda Intl Airport (KIA_T1/T2)</option>
+                            <option value="CHINNASWAMY_STADIUM">🏟️ Chinnaswamy Stadium (Concerts / IPL)</option>
+                            <option value="MANYATA_TECH_PARK">🏢 Manyata Tech Park (Shift Closes)</option>
+                        </select>
+                    </div>
+
+                    <!-- Flow Direction & Event -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="space-y-1.5">
+                            <label class="text-xs font-semibold text-slate-300">Direction</label>
+                            <select id="formDirection" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500">
+                                <option value="FROM_VENUE">From Hub ➔ City</option>
+                                <option value="TO_VENUE">City ➔ To Hub</option>
+                            </select>
+                        </div>
+                        <div class="space-y-1.5">
+                            <label class="text-xs font-semibold text-slate-300">Flight / Event Name</label>
+                            <input id="formEventName" value="Flight 6E-204" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 font-mono">
+                        </div>
+                    </div>
+
+                    <!-- Destination Zone (Interactive Chips) -->
+                    <div class="space-y-1.5">
+                        <label class="text-xs font-semibold text-slate-300">Destination Drop Zone (Bengaluru)</label>
+                        <div class="grid grid-cols-3 gap-2 text-xs" id="zoneChips">
+                            <button type="button" onclick="selectZone('HSR')" class="zone-btn active px-2.5 py-2 rounded-xl border border-sky-500 bg-sky-500/20 text-sky-300 font-medium text-center transition-all cursor-pointer">HSR Layout</button>
+                            <button type="button" onclick="selectZone('WHITEFIELD')" class="zone-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-400 font-medium text-center hover:border-slate-600 transition-all cursor-pointer">Whitefield</button>
+                            <button type="button" onclick="selectZone('KORAMANGALA')" class="zone-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-400 font-medium text-center hover:border-slate-600 transition-all cursor-pointer">Koramangala</button>
+                            <button type="button" onclick="selectZone('INDIRANAGAR')" class="zone-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-400 font-medium text-center hover:border-slate-600 transition-all cursor-pointer">Indiranagar</button>
+                            <button type="button" onclick="selectZone('ELECTRONIC_CITY')" class="zone-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-400 font-medium text-center hover:border-slate-600 transition-all cursor-pointer">Electronic City</button>
+                            <button type="button" onclick="selectZone('BELLANDUR')" class="zone-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-400 font-medium text-center hover:border-slate-600 transition-all cursor-pointer">Bellandur</button>
+                        </div>
+                        <input type="hidden" id="formDropZone" value="HSR">
+                    </div>
+
+                    <!-- Preference & Safety Filter -->
+                    <div class="pt-1">
+                        <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:border-slate-700 transition-colors">
+                            <div class="flex items-center gap-2.5">
+                                <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i>
+                                <div>
+                                    <span class="text-xs font-semibold text-white">Women-Only Cabpool</span>
+                                    <p class="text-[10px] text-slate-400">Only verified female accounts clustered</p>
+                                </div>
+                            </div>
+                            <input type="checkbox" id="formWomenOnly" class="w-4 h-4 rounded text-emerald-500 focus:ring-0 bg-slate-800 border-slate-700">
+                        </label>
+                    </div>
+
+                    <!-- Fare Estimation Banner -->
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-emerald-500/10 to-sky-500/10 border border-emerald-500/20 text-xs">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="tag" class="w-4 h-4 text-emerald-400"></i>
+                            <span class="text-slate-300">Solo Cab: <s class="text-slate-500">₹1,200</s> ➔ Pool: <strong class="text-emerald-400">₹400</strong></span>
+                        </div>
+                        <span class="text-emerald-400 font-bold font-mono">Save 66%</span>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button onclick="submitRideRequest()" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                        <span>Publish Request to Kafka Bus</span>
+                    </button>
+                </div>
+
+                <!-- Event Delay Simulator Card -->
+                <div class="glass-card rounded-2xl p-5 space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <h4 class="font-bold text-xs uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                            <i data-lucide="clock" class="w-4 h-4"></i>
+                            <span>Schedule & Flight Delay Simulator</span>
+                        </h4>
+                        <span class="text-[10px] font-mono text-slate-400">Topic: cabpool.event.delayed</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Broadcast a flight or concert delay to watch the Matcher dynamically re-calculate arrival windows for open pools.</p>
+                    <div class="grid grid-cols-12 gap-2">
+                        <input id="delayEventId" value="Flight 6E-204" class="col-span-7 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono">
+                        <select id="delayMinutes" class="col-span-5 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono">
+                            <option value="15">+15 Mins Delay</option>
+                            <option value="30" selected>+30 Mins Delay</option>
+                            <option value="45">+45 Mins Delay</option>
+                            <option value="60">+60 Mins Delay</option>
+                        </select>
+                    </div>
+                    <button onclick="broadcastDelay()" class="w-full py-2 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer">
+                        <i data-lucide="radio" class="w-3.5 h-3.5"></i>
+                        <span>Broadcast Delay Event</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column (7 Cols): Virtual Cabpool Card & Real-Time Event Feed -->
+            <div class="lg:col-span-7 space-y-6">
+
+                <!-- Active Matched Cabpool Visualizer -->
+                <div id="activeGroupContainer" class="glass-card rounded-2xl p-6 space-y-5 border-emerald-500/30 relative overflow-hidden">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-white">Active Carpool Match</h3>
+                                <p id="groupStatusHeader" class="text-xs text-slate-400 font-mono">Waiting for cluster match proposal...</p>
+                            </div>
+                        </div>
+                        <div id="groupBadge" class="hidden px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            PROPOSED
+                        </div>
+                    </div>
+
+                    <!-- Virtual Vehicle Seat Map (4 Passenger Slots) -->
+                    <div id="vehicleSection" class="p-4 rounded-xl bg-slate-900/90 border border-slate-800">
+                        <div class="flex items-center justify-between text-xs text-slate-400 font-mono mb-3">
+                            <span class="flex items-center gap-1.5">
+                                <i data-lucide="car" class="w-4 h-4 text-sky-400"></i>
+                                <span>Vehicle Seat Matrix (Max 4 Commuters)</span>
+                            </span>
+                            <span id="seatCount" class="text-sky-400 font-bold">0 / 4 Assigned</span>
+                        </div>
+
+                        <!-- 4 Seat Tiles -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center" id="seatMatrix">
+                            <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs">
+                                <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i>
+                                <span>Seat 1 (Empty)</span>
+                            </div>
+                            <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs">
+                                <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i>
+                                <span>Seat 2 (Empty)</span>
+                            </div>
+                            <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs">
+                                <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i>
+                                <span>Seat 3 (Empty)</span>
+                            </div>
+                            <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs">
+                                <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i>
+                                <span>Seat 4 (Empty)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Route Drop Sequence Timeline -->
+                    <div id="routeTimelineSection" class="space-y-2 hidden">
+                        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Drop Sequence (Geodesic Proximity Sorted)</span>
+                        <div id="routeTimeline" class="space-y-2 text-xs font-mono">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons for Current Group -->
+                    <div id="groupActionButtons" class="hidden flex items-center gap-3 pt-2">
+                        <button onclick="acceptGroupProposal()" class="flex-1 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            <span>Accept Proposed Share</span>
+                        </button>
+                        <button onclick="cancelActiveRide()" class="px-4 py-2.5 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all flex items-center gap-1.5 cursor-pointer" title="Cancel request and trigger automatic re-matching for remaining members">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                            <span>Cancel & Re-match</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Event Stream & Architecture Trace Terminal -->
+                <div class="glass-card rounded-2xl p-5 space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2.5 flex-wrap gap-2">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></div>
+                            <h3 class="font-bold text-xs uppercase tracking-wider text-slate-300 font-mono">Kafka Event Bus & Architecture Trace</h3>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button onclick="clearEventFeed()" class="text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800 border border-slate-700">Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Feed Output Box -->
+                    <div id="eventFeed" class="h-64 overflow-y-auto space-y-2 font-mono text-xs p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-slate-300">
+                        <div class="text-slate-500">[System] Initializing connection to STOMP WebSocket broker...</div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <button class="btn-amber" onclick="simulateDelay()">Broadcast Delay to Topic (cabpool.event.delayed)</button>
-        <p style="margin-top:12px; font-size:0.8rem; color:var(--text-muted); line-height: 1.4;">
-            Works for airport flights, stadium concerts, or office shift overruns. Matcher shifts the target pickup window accordingly.
-        </p>
-    </div>
+    </main>
 
-    <!-- Real-Time Event Feed -->
-    <div class="card" style="grid-column: 1 / -1;">
-        <h2>📡 Live Real-Time Event Stream (Kafka & WebSockets)</h2>
-        <div id="eventFeed" class="feed">
-            <div class="feed-entry"><span class="time">[System]</span> Initializing connection...</div>
-        </div>
-    </div>
-</div>
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 py-4 px-6 text-center text-xs text-slate-500 font-mono">
+        CabPool Modular Monolith • Developed for College Capstone & Distributed Systems Viva • Spring Boot 3 & Kafka
+    </footer>
 
-<script>
-    let userPriyaId = "69a4b172-ccb8-4f40-826e-5178e537f98d";
-    let userAnanyaId = "07951131-bb35-4136-adbe-6f89717269f7";
+    <!-- Application Script -->
+    <script>
+        // State
+        let allPersonas = [];
+        let currentPersona = null;
+        let stompClient = null;
+        let currentGroupId = null;
+        let currentRequestId = null;
+        let currentGroupData = null;
 
-    let stompClient = null;
-    let requestA_Id = null;
-    let requestB_Id = null;
-    let currentGroupId = null;
+        const ZONE_COORDS = {
+            'HSR': { address: "27th Main, Sector 1, HSR Layout", lat: 12.9116, lng: 77.6433 },
+            'WHITEFIELD': { address: "ITPL Main Road, Whitefield", lat: 12.9698, lng: 77.7499 },
+            'KORAMANGALA': { address: "80ft Road, 4th Block, Koramangala", lat: 12.9352, lng: 77.6245 },
+            'INDIRANAGAR': { address: "100ft Road, Indiranagar", lat: 12.9784, lng: 77.6408 },
+            'ELECTRONIC_CITY': { address: "Phase 1, Electronic City", lat: 12.8452, lng: 77.6602 },
+            'BELLANDUR': { address: "Outer Ring Road, Bellandur", lat: 12.9304, lng: 77.6784 }
+        };
 
-    function logEvent(tag, message) {
-        const feed = document.getElementById("eventFeed");
-        const now = new Date().toLocaleTimeString();
-        const div = document.createElement("div");
-        div.className = "feed-entry";
-        div.innerHTML = `<span class="time">[${now}]</span> <span class="${tag}">[${tag.replace('tag-', '').toUpperCase()}]</span> ${message}`;
-        feed.prepend(div);
-    }
+        // Logging helper
+        function logTrace(tag, msg, tagClass = "text-sky-400") {
+            const feed = document.getElementById("eventFeed");
+            const time = new Date().toLocaleTimeString();
+            const div = document.createElement("div");
+            div.className = "flex items-start gap-2 leading-relaxed border-b border-slate-900/60 pb-1";
+            div.innerHTML = `<span class="text-slate-500 shrink-0">[${time}]</span> <span class="font-bold shrink-0 ${tagClass}">[${tag}]</span> <span class="break-all">${msg}</span>`;
+            feed.prepend(div);
+        }
 
-    async function loadDemoUsers() {
-        try {
-            const res = await fetch('/api/users/demo');
-            if (res.ok) {
-                const data = await res.json();
-                if (data.priya && data.priya.id) userPriyaId = data.priya.id;
-                if (data.ananya && data.ananya.id) userAnanyaId = data.ananya.id;
-                logEvent("tag-info", `Active test users loaded: Priya (${userPriyaId.substring(0,8)}...), Ananya (${userAnanyaId.substring(0,8)}...)`);
+        // Zone selection
+        function selectZone(zone) {
+            document.getElementById("formDropZone").value = zone;
+            document.querySelectorAll(".zone-btn").forEach(btn => {
+                if (btn.innerText.toUpperCase().includes(zone.replace('_', ' '))) {
+                    btn.className = "zone-btn active px-2.5 py-2 rounded-xl border border-sky-500 bg-sky-500/20 text-sky-300 font-medium text-center transition-all cursor-pointer";
+                } else {
+                    btn.className = "zone-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-400 font-medium text-center hover:border-slate-600 transition-all cursor-pointer";
+                }
+            });
+        }
+
+        // Load Personas from Backend
+        async function loadPersonas() {
+            try {
+                const res = await fetch('/api/simulation/personas');
+                if (res.ok) {
+                    allPersonas = await res.json();
+                    renderPersonaCards();
+                    if (allPersonas.length > 0) {
+                        selectPersona(allPersonas[0]);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed loading personas", e);
             }
-        } catch (e) {
-            console.warn("Using fallback user IDs", e);
         }
-    }
 
-    function initWebSocket() {
-        const socket = new SockJS('/ws-cabpool');
-        stompClient = Stomp.over(socket);
-        stompClient.debug = null;
-
-        stompClient.connect({}, function () {
-            const badge = document.getElementById("wsStatus");
-            badge.className = "status-badge status-connected";
-            badge.innerText = "WebSocket: Connected";
-            logEvent("tag-info", "Connected to WebSocket message broker.");
-
-            // Subscribe to Priya's topic
-            stompClient.subscribe('/topic/rider/' + userPriyaId, function (message) {
-                handleRiderNotification('Priya', JSON.parse(message.body));
+        function renderPersonaCards() {
+            const container = document.getElementById("personaContainer");
+            container.innerHTML = "";
+            allPersonas.slice(0, 6).forEach((p, index) => {
+                const isFemale = p.gender === 'FEMALE';
+                const div = document.createElement("button");
+                div.type = "button";
+                div.id = `persona-btn-${p.id}`;
+                div.onclick = () => selectPersona(p);
+                div.className = `p-2.5 rounded-xl text-left border transition-all cursor-pointer ${currentPersona && currentPersona.id === p.id ? 'border-sky-500 bg-sky-500/15' : 'border-slate-800 bg-slate-900 hover:border-slate-700'}`;
+                
+                div.innerHTML = `
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${isFemale ? 'bg-pink-500/20 text-pink-400' : 'bg-blue-500/20 text-blue-400'}">
+                            ${p.name.charAt(0)}
+                        </div>
+                        <span class="text-xs font-bold text-white truncate">${p.name.split(' ')[0]}</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-[10px] text-slate-400">
+                        <span>${isFemale ? '♀' : '♂'}</span>
+                        <span class="truncate">${p.email.split('@')[0]}</span>
+                    </div>
+                `;
+                container.appendChild(div);
             });
-
-            // Subscribe to Ananya's topic
-            stompClient.subscribe('/topic/rider/' + userAnanyaId, function (message) {
-                handleRiderNotification('Ananya', JSON.parse(message.body));
-            });
-        }, function (error) {
-            const badge = document.getElementById("wsStatus");
-            badge.className = "status-badge status-disconnected";
-            badge.innerText = "WebSocket: Disconnected";
-            setTimeout(initWebSocket, 3000);
-        });
-    }
-
-    function handleRiderNotification(riderName, data) {
-        if (data.type === 'GROUP_PROPOSED') {
-            currentGroupId = data.groupId;
-            logEvent("tag-match", `🎉 Match proposed for ${riderName}! Group: ${data.groupId} at ${data.venue}. Total Fare: ₹${data.estTotalFare}`);
-            document.getElementById("btnAcceptA").style.display = "block";
-            document.getElementById("btnAcceptB").style.display = "block";
-            document.getElementById("btnCancelA").style.display = "block";
-            document.getElementById("btnCancelB").style.display = "block";
-
-            stompClient.subscribe('/topic/group/' + currentGroupId, function (msg) {
-                const update = JSON.parse(msg.body);
-                logEvent("tag-match", `Group Update [${update.status}]: ${update.message}`);
-            });
-        } else if (data.type === 'RIDE_CONFIRMED') {
-            logEvent("tag-match", `🚀 Ride confirmed for ${riderName}! Group ${data.groupId} is finalized.`);
-        } else if (data.type === 'RIDE_CANCELLED') {
-            logEvent("tag-cancel", `⚠️ Notification for ${riderName}: Ride was cancelled (${data.reason}). Returning to pool.`);
-        } else if (data.type === 'EVENT_DELAY') {
-            logEvent("tag-delay", `⏱️ Delay notice for ${riderName}: ${data.eventIdentifier} delayed by ${data.delayMinutes} mins.`);
         }
-    }
 
-    async function requestRideA() {
-        const payload = {
-            userId: userPriyaId,
-            venue: document.getElementById("riderA_venue").value,
-            direction: document.getElementById("riderA_direction").value,
-            eventIdentifier: document.getElementById("riderA_event").value,
-            targetTime: new Date().toISOString(),
-            maxWaitMinutes: 30,
-            dropAddress: "27th Main, Sector 1, HSR Layout",
-            dropLat: 12.9116,
-            dropLng: 77.6433,
-            dropZone: "HSR",
-            preference: "WOMEN_ONLY"
+        function selectPersona(p) {
+            currentPersona = p;
+            document.getElementById("activePersonaBadge").innerText = `${p.name} (${p.gender})`;
+            document.querySelectorAll("#personaContainer > button").forEach(b => {
+                b.className = b.id === `persona-btn-${p.id}` 
+                    ? 'p-2.5 rounded-xl text-left border border-sky-500 bg-sky-500/15 transition-all cursor-pointer' 
+                    : 'p-2.5 rounded-xl text-left border border-slate-800 bg-slate-900 hover:border-slate-700 transition-all cursor-pointer';
+            });
+
+            // Adjust Women-Only checkbox applicability
+            const womenCheckbox = document.getElementById("formWomenOnly");
+            if (p.gender !== 'FEMALE') {
+                womenCheckbox.checked = false;
+                womenCheckbox.disabled = true;
+            } else {
+                womenCheckbox.disabled = false;
+            }
+
+            // Resubscribe WebSocket topic if connected
+            if (stompClient && stompClient.connected) {
+                subscribeToPersonaTopic(p.id);
+            }
+            logTrace("IDENTITY", `Switched active persona to ${p.name} (${p.id.substring(0,8)}...)`, "text-sky-300");
+        }
+
+        let personaSubscription = null;
+        function subscribeToPersonaTopic(userId) {
+            if (personaSubscription) {
+                personaSubscription.unsubscribe();
+            }
+            personaSubscription = stompClient.subscribe('/topic/rider/' + userId, function (message) {
+                handleRiderEvent(JSON.parse(message.body));
+            });
+            logTrace("STOMP", `Listening on /topic/rider/${userId.substring(0,8)}...`, "text-slate-400");
+        }
+
+        // WebSocket Connection
+        function initWebSocket() {
+            const socket = new SockJS('/ws-cabpool');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null;
+
+            stompClient.connect({}, function () {
+                const badge = document.getElementById("wsBadge");
+                badge.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                document.getElementById("wsText").innerText = "WebSocket: Connected";
+                logTrace("STOMP", "Connected to WebSocket message broker.", "text-emerald-400");
+
+                if (currentPersona) {
+                    subscribeToPersonaTopic(currentPersona.id);
+                }
+            }, function () {
+                const badge = document.getElementById("wsBadge");
+                badge.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20";
+                document.getElementById("wsText").innerText = "WebSocket: Disconnected";
+                setTimeout(initWebSocket, 4000);
+            });
+        }
+
+        // Handle incoming WebSocket payloads
+        function handleRiderEvent(data) {
+            if (data.type === 'GROUP_PROPOSED') {
+                currentGroupId = data.groupId;
+                currentGroupData = data;
+                logTrace("MATCH:PROPOSED", `🎉 Cabpool match formed! Group ID: ${data.groupId}. Total Fare: ₹${data.estTotalFare}`, "text-emerald-400");
+                renderGroupMatch(data);
+
+                // Subscribe to group topic for confirmation broadcasts
+                stompClient.subscribe('/topic/group/' + currentGroupId, function (msg) {
+                    const update = JSON.parse(msg.body);
+                    logTrace("GROUP:UPDATE", `[${update.status}] ${update.message}`, "text-amber-400");
+                    if (update.status === 'CONFIRMED') {
+                        document.getElementById("groupBadge").innerText = "CONFIRMED";
+                        document.getElementById("groupBadge").className = "px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                        document.getElementById("groupStatusHeader").innerText = "All commuters confirmed. Driver dispatched!";
+                    }
+                });
+            } else if (data.type === 'RIDE_CONFIRMED') {
+                logTrace("CONFIRMED", `🚀 Ride confirmed! Your seat is secured in Group ${data.groupId}.`, "text-emerald-400");
+            } else if (data.type === 'RIDE_CANCELLED') {
+                logTrace("CANCELLED", `⚠️ A commuter cancelled. Remaining riders restored to OPEN & re-queued.`, "text-rose-400");
+                resetGroupCardUI();
+            } else if (data.type === 'EVENT_DELAY') {
+                logTrace("DELAY", `⏱️ ${data.eventIdentifier} delayed by ${data.delayMinutes} mins. Target time updated to ${data.newTargetTime}.`, "text-amber-400");
+            }
+            refreshMetrics();
+        }
+
+        // Render Matched Group UI
+        function renderGroupMatch(data) {
+            document.getElementById("groupBadge").classList.remove("hidden");
+            document.getElementById("routeTimelineSection").classList.remove("hidden");
+            document.getElementById("groupActionButtons").classList.remove("hidden");
+            document.getElementById("groupStatusHeader").innerText = `Venue: ${data.venue} • Pickup: ${new Date(data.plannedPickupTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+
+            // Render Seat Matrix
+            const seatMatrix = document.getElementById("seatMatrix");
+            seatMatrix.innerHTML = "";
+            const members = data.members || [];
+            document.getElementById("seatCount").innerText = `${members.length} / 4 Assigned`;
+
+            for (let i = 0; i < 4; i++) {
+                if (i < members.length) {
+                    const m = members[i];
+                    seatMatrix.innerHTML += `
+                        <div class="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs">
+                            <i data-lucide="user-check" class="w-5 h-5 mx-auto mb-1 text-emerald-400"></i>
+                            <div class="font-bold truncate">Seat ${m.dropOrder}</div>
+                            <div class="text-[10px] text-slate-400 truncate">${m.dropZone}</div>
+                            <div class="text-[10px] font-bold text-emerald-400 mt-1">₹${m.shareAmount}</div>
+                        </div>
+                    `;
+                } else {
+                    seatMatrix.innerHTML += `
+                        <div class="p-3 rounded-lg bg-slate-800/40 border border-dashed border-slate-700/60 text-slate-500 text-xs">
+                            <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-30"></i>
+                            <div>Seat ${i + 1}</div>
+                            <div class="text-[10px] opacity-40">Available</div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Render Route Timeline
+            const timeline = document.getElementById("routeTimeline");
+            timeline.innerHTML = `<div class="flex items-center gap-2 text-sky-400"><span>●</span> <span>Hub Pickup @ ${data.venue}</span></div>`;
+            members.forEach(m => {
+                timeline.innerHTML += `
+                    <div class="flex items-center justify-between text-slate-300 pl-4 border-l border-slate-700">
+                        <span>Drop ${m.dropOrder}: ${m.dropZone} (${m.dropAddress})</span>
+                        <span class="text-emerald-400 font-bold">₹${m.shareAmount}</span>
+                    </div>
+                `;
+            });
+            lucide.createIcons();
+        }
+
+        function resetGroupCardUI() {
+            document.getElementById("groupBadge").classList.add("hidden");
+            document.getElementById("routeTimelineSection").classList.add("hidden");
+            document.getElementById("groupActionButtons").classList.add("hidden");
+            document.getElementById("groupStatusHeader").innerText = "Waiting for cluster match proposal...";
+            document.getElementById("seatCount").innerText = "0 / 4 Assigned";
+            document.getElementById("seatMatrix").innerHTML = `
+                <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs"><i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i><span>Seat 1 (Empty)</span></div>
+                <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs"><i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i><span>Seat 2 (Empty)</span></div>
+                <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs"><i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i><span>Seat 3 (Empty)</span></div>
+                <div class="p-3 rounded-lg bg-slate-800/60 border border-dashed border-slate-700 text-slate-500 text-xs"><i data-lucide="user" class="w-5 h-5 mx-auto mb-1 opacity-40"></i><span>Seat 4 (Empty)</span></div>
+            `;
+            lucide.createIcons();
+        }
+
+        // REST Actions
+        async function submitRideRequest() {
+            if (!currentPersona) {
+                alert("Please select a rider persona first.");
+                return;
+            }
+
+            const zone = document.getElementById("formDropZone").value;
+            const zoneInfo = ZONE_COORDS[zone] || { address: "Bengaluru City", lat: 12.9716, lng: 77.5946 };
+            const isWomenOnly = document.getElementById("formWomenOnly").checked;
+
+            const payload = {
+                userId: currentPersona.id,
+                venue: document.getElementById("formVenue").value,
+                direction: document.getElementById("formDirection").value,
+                eventIdentifier: document.getElementById("formEventName").value,
+                targetTime: new Date().toISOString(),
+                maxWaitMinutes: 30,
+                dropAddress: zoneInfo.address,
+                dropLat: zoneInfo.lat,
+                dropLng: zoneInfo.lng,
+                dropZone: zone,
+                preference: isWomenOnly ? "WOMEN_ONLY" : "MIXED"
+            };
+
+            try {
+                const res = await fetch('/api/rides/requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    currentRequestId = data.id;
+                    logTrace("INGEST", `Request ${data.id.substring(0,8)}... accepted in ${data.measuredIngestionTimeMs}ms. Sent to Kafka (cabpool.ride.requested)`, "text-sky-400");
+                    refreshMetrics();
+                } else {
+                    const err = await res.json();
+                    logTrace("ERROR", `Failed: ${err.message || 'Check logs'}`, "text-rose-400");
+                }
+            } catch (e) {
+                logTrace("ERROR", e.message, "text-rose-400");
+            }
+        }
+
+        async function acceptGroupProposal() {
+            if (!currentGroupId || !currentRequestId) return;
+            try {
+                const res = await fetch(`/api/rides/groups/${currentGroupId}/accept?requestId=${currentRequestId}`, { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    logTrace("ACCEPT", `Accepted seat in Group ${currentGroupId.substring(0,8)}. Status: ${data.status}`, "text-emerald-400");
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function cancelActiveRide() {
+            if (!currentRequestId) return;
+            try {
+                await fetch(`/api/rides/requests/${currentRequestId}/cancel?reason=User%20initiated%20cancel`, { method: 'POST' });
+                logTrace("CANCEL", `Cancelled request ${currentRequestId.substring(0,8)}. Sent to Kafka (cabpool.ride.cancelled). Re-matching triggered!`, "text-rose-400");
+                resetGroupCardUI();
+                refreshMetrics();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function broadcastDelay() {
+            const eventId = document.getElementById("delayEventId").value;
+            const delay = parseInt(document.getElementById("delayMinutes").value);
+            try {
+                const res = await fetch('/api/events/delay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ eventIdentifier: eventId, delayMinutes: delay })
+                });
+                if (res.ok) {
+                    logTrace("DELAY", `Broadcasted +${delay}m delay for ${eventId} to Kafka (cabpool.event.delayed)`, "text-amber-400");
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function triggerFlightBurst() {
+            logTrace("BURST", "Firing concurrent burst of 10 incoming flight passengers...", "text-violet-400");
+            try {
+                const res = await fetch('/api/simulation/burst?count=10', { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    logTrace("BURST:DONE", `Pushed 10 concurrent requests to Kafka. Watch Matcher Service cluster cars in real time!`, "text-emerald-400");
+                    setTimeout(refreshMetrics, 800);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function resetSystemData() {
+            if (!confirm("Reset all active ride requests, groups, and Redis pools?")) return;
+            try {
+                await fetch('/api/simulation/reset', { method: 'POST' });
+                resetGroupCardUI();
+                logTrace("RESET", "All requests, groups, and candidate pools have been reset.", "text-slate-400");
+                refreshMetrics();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function refreshMetrics() {
+            try {
+                const res = await fetch('/api/simulation/metrics');
+                if (res.ok) {
+                    const m = await res.json();
+                    document.getElementById("metricTotalRequests").innerText = m.totalRequests;
+                    document.getElementById("metricMatchedRequests").innerText = m.matchedRequests;
+                    document.getElementById("metricOpenRequests").innerText = m.openRequests;
+                    document.getElementById("metricPoolCandidates").innerText = m.activeRedisPoolCandidates;
+                    document.getElementById("metricTotalGroups").innerText = m.totalGroups;
+                    document.getElementById("metricConfirmedGroups").innerText = m.confirmedGroups;
+
+                    // Pool breakdown
+                    const zones = Object.entries(m.poolByZone || {}).map(([z, c]) => `${z}: ${c}`).join(', ');
+                    document.getElementById("metricZoneBreakdown").innerText = zones || "Pool is empty";
+                }
+            } catch (e) {}
+        }
+
+        function clearEventFeed() {
+            document.getElementById("eventFeed").innerHTML = "";
+        }
+
+        // Initialization on Load
+        window.onload = async function() {
+            await loadPersonas();
+            initWebSocket();
+            refreshMetrics();
+            setInterval(refreshMetrics, 3500);
+            lucide.createIcons();
         };
-        const res = await fetch('/api/rides/requests', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-            const err = await res.json();
-            logEvent("tag-cancel", `Error submitting ride for Priya: ${err.message || 'Check server logs'}`);
-            return;
-        }
-        const data = await res.json();
-        requestA_Id = data.id;
-        document.getElementById("btnCancelA").style.display = "block";
-        logEvent("tag-info", `Priya submitted request ${data.id.substring(0,8)}... Published to Kafka (cabpool.ride.requested) in measured ${data.measuredIngestionTimeMs} ms.`);
-    }
-
-    async function requestRideB() {
-        const payload = {
-            userId: userAnanyaId,
-            venue: document.getElementById("riderB_venue").value,
-            direction: document.getElementById("riderB_direction").value,
-            eventIdentifier: document.getElementById("riderB_event").value,
-            targetTime: new Date().toISOString(),
-            maxWaitMinutes: 30,
-            dropAddress: "14th Main, Sector 2, HSR Layout",
-            dropLat: 12.9125,
-            dropLng: 77.6445,
-            dropZone: "HSR",
-            preference: "WOMEN_ONLY"
-        };
-        const res = await fetch('/api/rides/requests', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-            const err = await res.json();
-            logEvent("tag-cancel", `Error submitting ride for Ananya: ${err.message || 'Check server logs'}`);
-            return;
-        }
-        const data = await res.json();
-        requestB_Id = data.id;
-        document.getElementById("btnCancelB").style.display = "block";
-        logEvent("tag-info", `Ananya submitted request ${data.id.substring(0,8)}... Published to Kafka. Matcher will now evaluate candidate pool.`);
-    }
-
-    async function acceptGroup(rider) {
-        const reqId = rider === 'A' ? requestA_Id : requestB_Id;
-        const res = await fetch(`/api/rides/groups/${currentGroupId}/accept?requestId=${reqId}`, { method: 'POST' });
-        const data = await res.json();
-        logEvent("tag-match", `Rider ${rider} accepted. Group status: ${data.status}. If both accepted, published to (cabpool.ride.confirmed).`);
-    }
-
-    async function cancelRide(rider) {
-        const reqId = rider === 'A' ? requestA_Id : requestB_Id;
-        await fetch(`/api/rides/requests/${reqId}/cancel?reason=Rider%20cancelled`, { method: 'POST' });
-        logEvent("tag-cancel", `Rider ${rider} cancelled request. Published to (cabpool.ride.cancelled). Remaining rider re-pooled for re-matching!`);
-    }
-
-    async function simulateDelay() {
-        const eventId = document.getElementById("delayEventId").value;
-        const delay = parseInt(document.getElementById("delayMinutes").value);
-        const res = await fetch('/api/events/delay', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({eventIdentifier: eventId, delayMinutes: delay})
-        });
-        const data = await res.json();
-        logEvent("tag-delay", `EventTrackingService published delay for ${data.eventIdentifier} (+${data.delayMinutes} mins) to (cabpool.event.delayed)!`);
-    }
-
-    window.onload = async function() {
-        await loadDemoUsers();
-        initWebSocket();
-    };
-</script>
+    </script>
 </body>
 </html>

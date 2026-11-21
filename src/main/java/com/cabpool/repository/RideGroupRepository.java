@@ -11,4 +11,6 @@ import java.util.UUID;
 @Repository
 public interface RideGroupRepository extends JpaRepository<RideGroup, UUID> {
     List<RideGroup> findByStatus(RideGroupStatus status);
+
+    long countByStatus(RideGroupStatus status);
 }
