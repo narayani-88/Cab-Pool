@@ -18,8 +18,8 @@ import com.cabpool.repository.RideGroupMemberRepository;
 import com.cabpool.repository.RideGroupRepository;
 import com.cabpool.repository.RideRequestRepository;
 import com.cabpool.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -30,9 +30,9 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class RideService {
+
+    private static final Logger log = LoggerFactory.getLogger(RideService.class);
 
     private final RideRequestRepository requestRepository;
     private final UserRepository userRepository;
@@ -40,6 +40,20 @@ public class RideService {
     private final RideGroupMemberRepository memberRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final RiderNotificationService notificationService;
+
+    public RideService(RideRequestRepository requestRepository,
+                       UserRepository userRepository,
+                       RideGroupRepository groupRepository,
+                       RideGroupMemberRepository memberRepository,
+                       KafkaTemplate<String, Object> kafkaTemplate,
+                       RiderNotificationService notificationService) {
+        this.requestRepository = requestRepository;
+        this.userRepository = userRepository;
+        this.groupRepository = groupRepository;
+        this.memberRepository = memberRepository;
+        this.kafkaTemplate = kafkaTemplate;
+        this.notificationService = notificationService;
+    }
 
     @Value("${cabpool.kafka.topics.ride-requested}")
     private String rideRequestedTopic;
@@ -61,6 +75,15 @@ public class RideService {
         if (dto.getPreference() == RideRequestPreference.WOMEN_ONLY) {
             if (user.getGender() != Gender.FEMALE || !user.isVerified()) {
                 throw new IllegalStateException("Women-only ride pools require a verified female account.");
+            }
+        }
+
+        // Clean up any old dangling OPEN requests for this user so they start a clean matching cycle
+        List<RideRequest> userRequests = requestRepository.findByUserIdOrderByCreatedAtDesc(dto.getUserId());
+        for (RideRequest existing : userRequests) {
+            if (existing.getStatus() == RideRequestStatus.OPEN) {
+                existing.setStatus(RideRequestStatus.CANCELLED);
+                requestRepository.save(existing);
             }
         }
 
@@ -278,6 +301,15 @@ public class RideService {
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<RideRequestResponseDto> getActiveRequestForUser(UUID userId) {
+        return requestRepository.findByUserIdOrderByCreatedAtDesc(userId)
+                .stream()
+                .filter(r -> r.getStatus() == RideRequestStatus.OPEN || r.getStatus() == RideRequestStatus.MATCHED)
+                .findFirst()
+                .map(this::mapToResponse);
     }
 
     @Transactional(readOnly = true)

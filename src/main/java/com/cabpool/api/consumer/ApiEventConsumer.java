@@ -7,18 +7,23 @@ import com.cabpool.event.GroupProposedEvent;
 import com.cabpool.event.RideCancelledEvent;
 import com.cabpool.event.RideConfirmedEvent;
 import com.cabpool.repository.RideRequestRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
-@Slf4j
 public class ApiEventConsumer {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiEventConsumer.class);
 
     private final RiderNotificationService notificationService;
     private final RideRequestRepository requestRepository;
+
+    public ApiEventConsumer(RiderNotificationService notificationService, RideRequestRepository requestRepository) {
+        this.notificationService = notificationService;
+        this.requestRepository = requestRepository;
+    }
 
     @KafkaListener(
             topics = "${cabpool.kafka.topics.ride-matched}",
@@ -29,6 +34,7 @@ public class ApiEventConsumer {
         for (GroupProposedEvent.MemberSummary member : event.getMembers()) {
             notificationService.notifyRiderOfGroupProposal(member.getUserId(), event);
         }
+        notificationService.notifyDriversOfNewDispatch(event);
     }
 
     @KafkaListener(

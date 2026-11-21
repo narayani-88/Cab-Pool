@@ -20,6 +20,12 @@ import java.util.UUID;
 public class RideController {
 
     private final RideService rideService;
+    private final com.cabpool.api.service.RiderNotificationService notificationService;
+
+    public RideController(RideService rideService, com.cabpool.api.service.RiderNotificationService notificationService) {
+        this.rideService = rideService;
+        this.notificationService = notificationService;
+    }
 
     @PostMapping("/requests")
     public ResponseEntity<RideRequestResponseDto> createRequest(@Valid @RequestBody CreateRideRequestDto dto) {
@@ -35,6 +41,13 @@ public class RideController {
     @GetMapping("/users/{userId}/requests")
     public ResponseEntity<List<RideRequestResponseDto>> getUserRequests(@PathVariable UUID userId) {
         return ResponseEntity.ok(rideService.getRequestsByUserId(userId));
+    }
+
+    @GetMapping("/users/{userId}/active")
+    public ResponseEntity<RideRequestResponseDto> getActiveUserRequest(@PathVariable UUID userId) {
+        return rideService.getActiveRequestForUser(userId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.noContent().build());
     }
 
     @PostMapping("/groups/{groupId}/accept")
@@ -60,5 +73,25 @@ public class RideController {
     @GetMapping("/groups/{groupId}")
     public ResponseEntity<RideGroup> getGroup(@PathVariable UUID groupId) {
         return ResponseEntity.ok(rideService.getGroupById(groupId));
+    }
+
+    @PostMapping("/driver/groups/{groupId}/status")
+    public ResponseEntity<java.util.Map<String, Object>> updateDriverStatus(
+            @PathVariable UUID groupId,
+            @RequestParam String status,
+            @RequestParam(defaultValue = "Ramesh Kumar") String driverName,
+            @RequestParam(defaultValue = "KA-01-MJ-4029") String vehicleNumber,
+            @RequestParam(defaultValue = "Driver updated status") String message) {
+
+        if ("ACCEPTED".equalsIgnoreCase(status)) {
+            rideService.acceptAllGroupMembers(groupId);
+        }
+        notificationService.notifyDriverTripUpdate(groupId, status.toUpperCase(), message, driverName, vehicleNumber);
+        return ResponseEntity.ok(java.util.Map.of(
+                "status", "SUCCESS",
+                "groupId", groupId,
+                "driverStatus", status.toUpperCase(),
+                "message", message
+        ));
     }
 }

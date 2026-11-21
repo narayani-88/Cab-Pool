@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CabPool - Passenger Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        zinc: {
+                            950: '#09090b',
+                            900: '#121215',
+                            850: '#18181b',
+                            800: '#27272a',
+                            700: '#3f3f46'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Modernize legacy unload listeners to prevent Chrome Permissions-Policy violations -->
+    <script>
+        (function() {
+            const _origAEL = window.addEventListener;
+            window.addEventListener = function(type, listener, options) {
+                if (type === 'unload') {
+                    return _origAEL.call(window, 'pagehide', listener, options);
+                }
+                return _origAEL.apply(window, arguments);
+            };
+            try {
+                Object.defineProperty(window, 'onunload', {
+                    set: function(fn) { window.addEventListener('pagehide', fn); },
+                    get: function() { return null; },
+                    configurable: true
+                });
+            } catch(e) {}
+        })();
+    </script>
+    <!-- SockJS and STOMP -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #09090b; color: #fafafa; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .progress-bar-indeterminate {
+            background-size: 200% 100%;
+            background-image: linear-gradient(90deg, #27272a 0%, #10b981 50%, #27272a 100%);
+            animation: moveProgress 1.8s infinite linear;
+        }
+        @keyframes moveProgress {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-zinc-800 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="sticky top-0 z-50 border-b border-zinc-850 bg-zinc-950/90 backdrop-blur-md px-6 py-3.5">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <!-- Brand -->
+            <div class="flex items-center gap-3">
+                <a href="/" class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-black font-bold">
+                        <i data-lucide="compass" class="w-4 h-4"></i>
+                    </div>
+                    <span class="text-base font-semibold tracking-tight text-white">CabPool</span>
+                </a>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 font-mono">
+                    Passenger Portal
+                </span>
+            </div>
+
+            <!-- User Profile & Navigation -->
+            <div class="flex items-center gap-4">
+                <a href="/driver.html" class="text-xs text-zinc-400 hover:text-white transition-colors hidden sm:block">
+                    Driver Portal
+                </a>
+                <a href="/" class="text-xs text-zinc-400 hover:text-white transition-colors hidden sm:block">
+                    Architecture Hub
+                </a>
+
+                <div class="h-4 w-px bg-zinc-800 hidden sm:block"></div>
+
+                <!-- Active Logged In User Pill -->
+                <div class="flex items-center gap-2.5 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1.5 text-xs">
+                    <div id="userAvatar" class="w-5 h-5 rounded-full bg-zinc-700 text-white flex items-center justify-center text-[10px] font-bold">
+                        U
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span id="userName" class="font-medium text-white">Loading...</span>
+                        <span id="userGenderBadge" class="text-[10px] text-zinc-500 font-mono"></span>
+                    </div>
+                    <button onclick="handleSignOut()" title="Sign Out" class="text-zinc-500 hover:text-rose-400 transition-colors ml-1">
+                        <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="max-w-7xl mx-auto w-full px-6 py-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+        <!-- Left Column: Booking & Ride Console (5 Cols) -->
+        <div class="lg:col-span-5 space-y-6">
+
+            <!-- Card 1: Main Ride Booking Form (Active when idle) -->
+            <div id="bookingCard" class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-5">
+                <div class="space-y-1">
+                    <h2 class="text-base font-semibold text-white">Plan your airport commute</h2>
+                    <p class="text-xs text-zinc-400">Smart clustering matches you with co-passengers heading in your direction.</p>
+                </div>
+
+                <!-- Pickup & Drop Locations -->
+                <div class="space-y-3">
+                    <!-- Pickup -->
+                    <div class="space-y-1">
+                        <label class="text-xs font-medium text-zinc-400">Pickup Location</label>
+                        <div class="flex items-center gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-xs">
+                            <div class="w-2.5 h-2.5 rounded-full bg-white shrink-0"></div>
+                            <div class="truncate">
+                                <div class="font-medium text-white">Kempegowda International Airport (BLR)</div>
+                                <div class="text-[11px] text-zinc-400">Terminal 1 / 2 • Arrival Hall Pillar 4</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Drop Zone -->
+                    <div class="space-y-1.5">
+                        <label class="text-xs font-medium text-zinc-400">Drop Destination (Bengaluru)</label>
+                        <div class="grid grid-cols-2 gap-2 text-xs" id="destinationZones">
+                            <button type="button" onclick="setZone('HSR')" class="zone-pill active p-3 rounded-xl bg-zinc-950 border border-emerald-500 text-left transition-all">
+                                <div class="font-semibold text-white">HSR Layout</div>
+                                <div class="text-[10px] text-zinc-400">Sector 1 • 27th Main</div>
+                            </button>
+                            <button type="button" onclick="setZone('WHITEFIELD')" class="zone-pill p-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all">
+                                <div class="font-semibold text-zinc-300">Whitefield</div>
+                                <div class="text-[10px] text-zinc-500">ITPL • EPIP Zone</div>
+                            </button>
+                            <button type="button" onclick="setZone('KORAMANGALA')" class="zone-pill p-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all">
+                                <div class="font-semibold text-zinc-300">Koramangala</div>
+                                <div class="text-[10px] text-zinc-500">80ft Road • 4th Block</div>
+                            </button>
+                            <button type="button" onclick="setZone('INDIRANAGAR')" class="zone-pill p-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all">
+                                <div class="font-semibold text-zinc-300">Indiranagar</div>
+                                <div class="text-[10px] text-zinc-500">100ft Road • Metro</div>
+                            </button>
+                        </div>
+                        <input type="hidden" id="selectedDropZone" value="HSR">
+                    </div>
+                </div>
+
+                <!-- Ride Option Selection -->
+                <div class="space-y-2 pt-1 border-t border-zinc-850">
+                    <label class="text-xs font-medium text-zinc-400">Select Service Tier</label>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="p-3.5 rounded-xl bg-zinc-950 border border-emerald-500/50 space-y-1">
+                            <div class="flex justify-between items-center">
+                                <span class="font-semibold text-white">CabPool Shared</span>
+                                <span class="text-emerald-400 font-bold font-mono">₹600</span>
+                            </div>
+                            <div class="text-[11px] text-zinc-400">1-2 stops • 50% split savings</div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 opacity-60 space-y-1">
+                            <div class="flex justify-between items-center">
+                                <span class="font-medium text-zinc-300">Solo Private</span>
+                                <span class="text-zinc-400 font-mono">₹1,200</span>
+                            </div>
+                            <div class="text-[11px] text-zinc-500">Direct non-stop ride</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Safety Preference (Women-Only Filter) -->
+                <div class="space-y-1.5 pt-1">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="font-medium text-zinc-400">Carpool Safety Preference</span>
+                        <span id="prefStatusText" class="text-[11px] text-zinc-400">Mixed pool</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <button type="button" id="btnPrefMixed" onclick="setPreference('MIXED')" 
+                            class="py-2.5 px-3 rounded-xl bg-zinc-950 border border-zinc-700 text-white font-medium transition-all">
+                            Mixed Commuters
+                        </button>
+                        <button type="button" id="btnPrefWomen" onclick="setPreference('WOMEN_ONLY')" 
+                            class="py-2.5 px-3 rounded-xl bg-zinc-950 border border-zinc-850 text-zinc-500 font-medium hover:border-zinc-700 transition-all">
+                            Women-Only Pool
+                        </button>
+                    </div>
+                    <input type="hidden" id="selectedPreference" value="MIXED">
+                </div>
+
+                <!-- CTA Request Button -->
+                <button type="button" id="btnSubmitRequest" onclick="submitRideRequest()" 
+                    class="w-full py-3 rounded-xl font-medium text-xs bg-white text-black hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm">
+                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                    <span>Request Shared Ride</span>
+                </button>
+            </div>
+
+            <!-- Card 2: Live In-Progress State (Active when searching / matched / confirmed) -->
+            <div id="liveTripCard" class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-5 hidden">
+                <div class="flex items-center justify-between border-b border-zinc-850 pb-3">
+                    <div class="space-y-0.5">
+                        <span class="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Ride Status</span>
+                        <h3 class="text-sm font-semibold text-white" id="tripStageTitle">Finding Co-Passengers</h3>
+                    </div>
+                    <span id="tripStatusBadge" class="text-xs font-mono px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 font-medium">
+                        SEARCHING
+                    </span>
+                </div>
+
+                <!-- Progress Bar (Searching) -->
+                <div id="searchingStateBox" class="space-y-4 py-2">
+                    <div class="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                        <div class="h-full progress-bar-indeterminate"></div>
+                    </div>
+                    <div class="p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-850 space-y-1.5">
+                        <div class="flex items-center gap-2 text-xs text-emerald-400 font-medium">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                            <span>Active in Redis Matcher Pool</span>
+                        </div>
+                        <p class="text-xs text-zinc-400 leading-relaxed" id="searchingStatusDesc">
+                            Waiting for another commuter heading toward <strong class="text-white" id="searchingZoneTarget">destination</strong> to form a pool.
+                        </p>
+                    </div>
+
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-zinc-950/60 border border-zinc-850">
+                        <div class="text-[11px] text-zinc-400">
+                            Testing alone on one device?
+                        </div>
+                        <button type="button" id="btnSimulateCoRider" onclick="simulateCoRider()" 
+                            class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-medium flex items-center gap-1.5 transition-colors border border-zinc-700">
+                            <i data-lucide="user-plus" class="w-3.5 h-3.5 text-emerald-400"></i>
+                            <span>Simulate 2nd Passenger</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Matched Route Details (When matched) -->
+                <div id="matchedStateBox" class="space-y-3 hidden">
+                    <div class="p-3.5 rounded-xl bg-zinc-950 border border-zinc-850 space-y-2 text-xs font-mono">
+                        <div class="text-zinc-400">Assigned Stops:</div>
+                        <div id="routeStopList" class="space-y-1.5 pl-3 border-l border-zinc-800 text-zinc-300">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-center p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                        <div>
+                            <div class="text-[10px] text-zinc-400 uppercase tracking-wider">Final Fare Per Passenger</div>
+                            <div class="text-emerald-400 font-bold text-sm font-mono" id="fareDisplay">₹600.00</div>
+                        </div>
+                        <span class="text-emerald-400 font-mono text-xs font-medium">50% Savings Applied</span>
+                    </div>
+                </div>
+
+                <!-- Driver Assigned Information Card (When confirmed) -->
+                <div id="driverInfoBox" class="p-4 rounded-xl bg-zinc-950 border border-zinc-850 space-y-2.5 text-xs hidden">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-full bg-zinc-800 text-white flex items-center justify-center font-bold text-xs">
+                                RK
+                            </div>
+                            <div>
+                                <div class="font-semibold text-white" id="driverName">Ramesh Kumar</div>
+                                <div class="text-[11px] text-zinc-400 font-mono">Toyota Etios • KA-01-MJ-4029</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[10px] text-zinc-500 uppercase tracking-wider">Meeting Point</div>
+                            <div class="font-semibold text-white">Pillar 4 (T1)</div>
+                        </div>
+                    </div>
+                    <div class="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-300" id="driverLiveMessage">
+                        Driver dispatched to Terminal 1 arrival hall.
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="pt-2 space-y-2" id="tripActionBtns">
+                    <button type="button" id="btnAcceptMatch" onclick="acceptMatchProposal()" 
+                        class="w-full py-2.5 rounded-xl font-medium text-xs bg-emerald-500 hover:bg-emerald-400 text-black transition-all flex items-center justify-center gap-1.5 cursor-pointer hidden">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                        <span>Accept Carpool Proposal</span>
+                    </button>
+                    <button type="button" onclick="cancelActiveRide()" 
+                        class="w-full py-2 rounded-xl font-medium text-xs text-zinc-400 hover:text-rose-400 transition-colors">
+                        Cancel Request
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Interactive Map & Route Inspector (7 Cols) -->
+        <div class="lg:col-span-7 space-y-6">
+
+            <!-- Route Visualization Card -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-semibold text-white">Route Corridors</h3>
+                        <p class="text-xs text-zinc-400">Kempegowda International Airport to Bangalore Arterial Zones</p>
+                    </div>
+                    <span class="text-xs font-mono text-zinc-500">Live Navigation</span>
+                </div>
+
+                <!-- Visual Route Graphic (Clean Vector / SVG Path) -->
+                <div class="relative w-full h-72 rounded-xl bg-zinc-950 border border-zinc-850 p-6 flex flex-col justify-between overflow-hidden">
+                    <!-- Subtle Map Grid Background -->
+                    <div class="absolute inset-0 opacity-15" style="background-image: radial-gradient(#3f3f46 1px, transparent 1px); background-size: 20px 20px;"></div>
+
+                    <!-- Origin Hub -->
+                    <div class="relative z-10 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white shrink-0">
+                            <i data-lucide="plane" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-semibold text-white">Kempegowda Intl Airport (BLR)</div>
+                            <div class="text-[10px] text-zinc-500 font-mono">Origin Hub • North Bangalore</div>
+                        </div>
+                    </div>
+
+                    <!-- Route Connection Path -->
+                    <div class="relative z-10 my-auto pl-4 border-l-2 border-dashed border-zinc-700 space-y-2 py-3 text-xs text-zinc-400 font-mono">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-zinc-600"></span>
+                            <span>Hebbal Flyover (NH 44 Express Corridor)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-zinc-600"></span>
+                            <span>Outer Ring Road Arterial Bypass</span>
+                        </div>
+                    </div>
+
+                    <!-- Destination Hub -->
+                    <div class="relative z-10 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                                <i data-lucide="map-pin" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <div class="text-xs font-semibold text-white" id="routeDestName">HSR Layout Sector 1</div>
+                                <div class="text-[10px] text-zinc-500 font-mono" id="routeEstDistance">Distance: ~44 km • Est. 52 mins</div>
+                            </div>
+                        </div>
+                        <span class="text-xs font-mono text-emerald-400 font-medium px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+                            Greedy Cluster Match
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Real-time Architecture Notice -->
+                <div class="p-3.5 rounded-xl bg-zinc-950 border border-zinc-850 text-xs text-zinc-400 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="cpu" class="w-4 h-4 text-zinc-400"></i>
+                        <span>Event stream: Apache Kafka (cabpool.ride.requested) • Redis Candidate ZSet</span>
+                    </div>
+                    <span class="text-[11px] font-mono text-zinc-500">Latency: ~3ms</span>
+                </div>
+            </div>
+
+            <!-- Helpful Information Card -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-3">
+                <h4 class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">How Airport Carpooling Works</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-zinc-400">
+                    <div class="p-3 rounded-xl bg-zinc-950 border border-zinc-850 space-y-1">
+                        <div class="font-medium text-white">1. Instant Booking</div>
+                        <p class="text-[11px] leading-relaxed">Submit your request upon landing. Requests are queued in Redis in milliseconds.</p>
+                    </div>
+                    <div class="p-3 rounded-xl bg-zinc-950 border border-zinc-850 space-y-1">
+                        <div class="font-medium text-white">2. Route Matching</div>
+                        <p class="text-[11px] leading-relaxed">Passengers landing within 30 mins heading to the same zone are paired into 1 vehicle.</p>
+                    </div>
+                    <div class="p-3 rounded-xl bg-zinc-950 border border-zinc-850 space-y-1">
+                        <div class="font-medium text-white">3. Guaranteed Split</div>
+                        <p class="text-[11px] leading-relaxed">Total fare (₹1,200) is split evenly across passengers, cutting costs by 50%.</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-zinc-850 px-6 py-4 text-center text-xs text-zinc-500">
+        CabPool Enterprise Mobility Platform • Subscribed to /topic/rider/{userId}
+    </footer>
+
+    <!-- Application Script -->
+    <script>
+        let currentUser = null;
+        let stompClient = null;
+        let activeRequestId = null;
+        let activeGroupId = null;
+        let userSub = null;
+        let groupSub = null;
+
+        const ZONE_CONFIG = {
+            'HSR': { name: "HSR Layout Sector 1", distance: "Distance: ~44 km • Est. 52 mins", address: "27th Main, Sector 1, HSR Layout", lat: 12.9116, lng: 77.6433 },
+            'WHITEFIELD': { name: "Whitefield ITPL", distance: "Distance: ~38 km • Est. 45 mins", address: "ITPL Main Road, Whitefield", lat: 12.9698, lng: 77.7499 },
+            'KORAMANGALA': { name: "Koramangala 4th Block", distance: "Distance: ~41 km • Est. 48 mins", address: "80ft Road, 4th Block, Koramangala", lat: 12.9352, lng: 77.6245 },
+            'INDIRANAGAR': { name: "Indiranagar 100ft Road", distance: "Distance: ~36 km • Est. 40 mins", address: "100ft Road, Indiranagar", lat: 12.9784, lng: 77.6408 }
+        };
+
+        // Authentication Check
+        function checkAuth() {
+            const stored = localStorage.getItem('cabpool_user');
+            if (!stored) {
+                window.location.href = '/login.html';
+                return null;
+            }
+            currentUser = JSON.parse(stored);
+            document.getElementById('userName').innerText = currentUser.name;
+            document.getElementById('userAvatar').innerText = currentUser.name.charAt(0);
+            document.getElementById('userGenderBadge').innerText = currentUser.gender === 'FEMALE' ? '• Verified Female' : '• Commuter';
+
+            if (currentUser.gender === 'FEMALE') {
+                setPreference('WOMEN_ONLY');
+            } else {
+                setPreference('MIXED');
+            }
+            return currentUser;
+        }
+
+        function handleSignOut() {
+            localStorage.removeItem('cabpool_user');
+            window.location.href = '/login.html';
+        }
+
+        function setZone(zone) {
+            document.getElementById('selectedDropZone').value = zone;
+            document.querySelectorAll('.zone-pill').forEach(btn => {
+                if (btn.innerText.includes(zone)) {
+                    btn.className = "zone-pill active p-3 rounded-xl bg-zinc-950 border border-emerald-500 text-left transition-all";
+                    btn.querySelector('.font-semibold').className = "font-semibold text-white";
+                } else {
+                    btn.className = "zone-pill p-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all";
+                    btn.querySelector('.font-semibold').className = "font-semibold text-zinc-300";
+                }
+            });
+            const conf = ZONE_CONFIG[zone] || ZONE_CONFIG['HSR'];
+            document.getElementById('routeDestName').innerText = conf.name;
+            document.getElementById('routeEstDistance').innerText = conf.distance;
+        }
+
+        function setPreference(pref) {
+            if (pref === 'WOMEN_ONLY' && currentUser && currentUser.gender !== 'FEMALE') {
+                alert("Women-only pooling is reserved for verified female commuters.");
+                return;
+            }
+            document.getElementById('selectedPreference').value = pref;
+            if (pref === 'WOMEN_ONLY') {
+                document.getElementById('btnPrefWomen').className = "py-2.5 px-3 rounded-xl bg-zinc-950 border border-emerald-500 text-white font-medium transition-all shadow-sm";
+                document.getElementById('btnPrefMixed').className = "py-2.5 px-3 rounded-xl bg-zinc-950 border border-zinc-850 text-zinc-500 font-medium hover:border-zinc-700 transition-all";
+                document.getElementById('prefStatusText').innerText = "Women-only verified cluster";
+            } else {
+                document.getElementById('btnPrefMixed').className = "py-2.5 px-3 rounded-xl bg-zinc-950 border border-zinc-700 text-white font-medium transition-all shadow-sm";
+                document.getElementById('btnPrefWomen').className = "py-2.5 px-3 rounded-xl bg-zinc-950 border border-zinc-850 text-zinc-500 font-medium hover:border-zinc-700 transition-all";
+                document.getElementById('prefStatusText').innerText = "Mixed commuters";
+            }
+        }
+
+        // WebSockets
+        function connectWebSocket() {
+            const socket = new SockJS('/ws-cabpool');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null;
+            stompClient.connect({}, function () {
+                subscribeToUserTopic();
+            }, function () {
+                setTimeout(connectWebSocket, 4000);
+            });
+        }
+
+        function subscribeToUserTopic() {
+            if (!stompClient || !stompClient.connected || !currentUser) return;
+            if (userSub) userSub.unsubscribe();
+
+            userSub = stompClient.subscribe('/topic/rider/' + currentUser.id, function (msg) {
+                const data = JSON.parse(msg.body);
+                handleRiderEvent(data);
+            });
+        }
+
+        function handleRiderEvent(data) {
+            if (data.type === 'GROUP_PROPOSED') {
+                activeGroupId = data.groupId;
+                renderMatchedState(data);
+                subscribeToGroupTopic(data.groupId);
+            } else if (data.type === 'RIDE_CONFIRMED') {
+                renderConfirmedState(data);
+            } else if (data.type === 'RIDE_CANCELLED') {
+                alert("A commuter cancelled. You are re-queued in the open candidate pool.");
+                showSearchingState();
+            }
+        }
+
+        function subscribeToGroupTopic(groupId) {
+            if (!stompClient || !stompClient.connected) return;
+            if (groupSub) groupSub.unsubscribe();
+
+            groupSub = stompClient.subscribe('/topic/group/' + groupId, function (msg) {
+                const update = JSON.parse(msg.body);
+                if (update.type === 'DRIVER_STATUS_UPDATE') {
+                    document.getElementById('driverLiveMessage').innerText = update.message;
+                    if (update.status === 'ARRIVED') {
+                        document.getElementById('driverLiveMessage').className = "p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 font-medium";
+                    } else if (update.status === 'STARTED') {
+                        document.getElementById('driverLiveMessage').className = "p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-[11px] text-sky-300 font-medium";
+                    }
+                }
+            });
+        }
+
+        // API Requests
+        async function submitRideRequest() {
+            if (!currentUser) return;
+            const zone = document.getElementById('selectedDropZone').value;
+            const pref = document.getElementById('selectedPreference').value;
+            const zoneData = ZONE_CONFIG[zone] || ZONE_CONFIG['HSR'];
+
+            const payload = {
+                userId: currentUser.id,
+                venue: "KIA_AIRPORT",
+                direction: "FROM_VENUE",
+                eventIdentifier: "Flight 6E-204",
+                targetTime: new Date().toISOString(),
+                maxWaitMinutes: 30,
+                dropAddress: zoneData.address,
+                dropLat: zoneData.lat,
+                dropLng: zoneData.lng,
+                dropZone: zone,
+                preference: pref
+            };
+
+            const btn = document.getElementById('btnSubmitRequest');
+            btn.innerHTML = `<span>Ingesting Request...</span>`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/rides/requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    activeRequestId = data.id;
+                    showSearchingState();
+                } else {
+                    alert("Unable to process request. Please retry.");
+                    btn.disabled = false;
+                    btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i><span>Request Shared Ride</span>`;
+                    lucide.createIcons();
+                }
+            } catch (e) {
+                console.error(e);
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i><span>Request Shared Ride</span>`;
+                lucide.createIcons();
+            }
+        }
+
+        function showSearchingState() {
+            document.getElementById('bookingCard').classList.add('hidden');
+            document.getElementById('liveTripCard').classList.remove('hidden');
+            document.getElementById('searchingStateBox').classList.remove('hidden');
+            document.getElementById('matchedStateBox').classList.add('hidden');
+            document.getElementById('driverInfoBox').classList.add('hidden');
+            document.getElementById('btnAcceptMatch').classList.add('hidden');
+
+            document.getElementById('tripStageTitle').innerText = "Finding Co-Passengers";
+            document.getElementById('tripStatusBadge').innerText = "QUEUED";
+            document.getElementById('tripStatusBadge').className = "text-xs font-mono px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-300 font-medium";
+            
+            const targetEl = document.getElementById('searchingZoneTarget');
+            if (targetEl) targetEl.innerText = selectedZone;
+        }
+
+        async function simulateCoRider() {
+            const btn = document.getElementById('btnSimulateCoRider');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<span class="animate-spin text-xs">●</span><span>Dispatching...</span>`;
+            }
+
+            // Pick a complementary co-rider
+            const partnerEmail = currentUser.email === 'ananya.iyer@example.com' 
+                ? 'priya.sharma@example.com' 
+                : 'ananya.iyer@example.com';
+
+            try {
+                const loginRes = await fetch('/api/users/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: partnerEmail, role: 'RIDER' })
+                });
+                const partner = await loginRes.json();
+
+                const ridePayload = {
+                    userId: partner.id || partner.userId,
+                    venue: 'KIA_AIRPORT',
+                    direction: 'FROM_VENUE',
+                    eventIdentifier: 'Flight 6E-204',
+                    targetTime: new Date(Date.now() + 10 * 60000).toISOString(),
+                    maxWaitMinutes: 30,
+                    dropAddress: `Outer Ring Road, ${selectedZone}`,
+                    dropLat: dropZones[selectedZone].lat,
+                    dropLng: dropZones[selectedZone].lng,
+                    dropZone: selectedZone,
+                    preference: selectedPreference
+                };
+
+                const res = await fetch('/api/rides/requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(ridePayload)
+                });
+
+                if (res.ok) {
+                    if (btn) {
+                        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span>Co-Rider Ingested!</span>`;
+                        lucide.createIcons();
+                    }
+                }
+            } catch (e) {
+                console.error("Error simulating co-rider", e);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = "Retry";
+                }
+            }
+        }
+
+        function renderMatchedState(data) {
+            document.getElementById('searchingStateBox').classList.add('hidden');
+            document.getElementById('matchedStateBox').classList.remove('hidden');
+            document.getElementById('btnAcceptMatch').classList.remove('hidden');
+
+            document.getElementById('tripStageTitle').innerText = "Carpool Cluster Formed";
+            document.getElementById('tripStatusBadge').innerText = "MATCHED";
+            document.getElementById('tripStatusBadge').className = "text-xs font-mono px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-medium border border-emerald-500/30";
+
+            const stopContainer = document.getElementById('routeStopList');
+            stopContainer.innerHTML = "";
+            (data.members || []).forEach(m => {
+                stopContainer.innerHTML += `
+                    <div class="flex justify-between items-center text-xs">
+                        <span>Drop ${m.dropOrder}: ${m.dropZone} (${m.dropAddress})</span>
+                        <span class="text-emerald-400 font-mono font-medium">₹${m.shareAmount}</span>
+                    </div>
+                `;
+            });
+            lucide.createIcons();
+        }
+
+        function renderConfirmedState(data) {
+            document.getElementById('btnAcceptMatch').classList.add('hidden');
+            document.getElementById('driverInfoBox').classList.remove('hidden');
+
+            document.getElementById('tripStageTitle').innerText = "Vehicle Dispatched";
+            document.getElementById('tripStatusBadge').innerText = "CONFIRMED";
+            document.getElementById('tripStatusBadge').className = "text-xs font-mono px-2.5 py-1 rounded-full bg-emerald-500 text-black font-semibold";
+            lucide.createIcons();
+        }
+
+        async function acceptMatchProposal() {
+            if (!activeGroupId) return;
+            try {
+                const res = await fetch(`/api/rides/groups/${activeGroupId}/accept-all`, { method: 'POST' });
+                if (res.ok) {
+                    renderConfirmedState();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function cancelActiveRide() {
+            if (!activeRequestId) {
+                resetToBooking();
+                return;
+            }
+            try {
+                await fetch(`/api/rides/requests/${activeRequestId}/cancel?reason=User%20cancelled`, { method: 'POST' });
+                resetToBooking();
+            } catch (e) {
+                resetToBooking();
+            }
+        }
+
+        function resetToBooking() {
+            activeRequestId = null;
+            activeGroupId = null;
+            document.getElementById('liveTripCard').classList.add('hidden');
+            document.getElementById('bookingCard').classList.remove('hidden');
+            const btn = document.getElementById('btnSubmitRequest');
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i><span>Request Shared Ride</span>`;
+            lucide.createIcons();
+        }
+
+        window.onload = function() {
+            if (checkAuth()) {
+                connectWebSocket();
+            }
+            lucide.createIcons();
+        };
+    </script>
+</body>
+</html>

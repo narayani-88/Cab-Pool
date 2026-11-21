@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CabPool - Driver Dispatch Console</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        zinc: {
+                            950: '#09090b',
+                            900: '#121215',
+                            850: '#18181b',
+                            800: '#27272a',
+                            700: '#3f3f46'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Modernize legacy unload listeners to prevent Chrome Permissions-Policy violations -->
+    <script>
+        (function() {
+            const _origAEL = window.addEventListener;
+            window.addEventListener = function(type, listener, options) {
+                if (type === 'unload') {
+                    return _origAEL.call(window, 'pagehide', listener, options);
+                }
+                return _origAEL.apply(window, arguments);
+            };
+            try {
+                Object.defineProperty(window, 'onunload', {
+                    set: function(fn) { window.addEventListener('pagehide', fn); },
+                    get: function() { return null; },
+                    configurable: true
+                });
+            } catch(e) {}
+        })();
+    </script>
+    <!-- SockJS and STOMP -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #09090b; color: #fafafa; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .pulse-dot { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(0.9); } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-zinc-800 selection:text-white">
+
+    <!-- Top Navigation Bar -->
+    <header class="sticky top-0 z-50 border-b border-zinc-850 bg-zinc-950/90 backdrop-blur-md px-6 py-3.5">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <!-- Brand -->
+            <div class="flex items-center gap-3">
+                <a href="/" class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center text-black font-bold">
+                        <i data-lucide="compass" class="w-4 h-4"></i>
+                    </div>
+                    <span class="text-base font-semibold tracking-tight text-white">CabPool</span>
+                </a>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-amber-400 font-mono">
+                    Driver Terminal
+                </span>
+            </div>
+
+            <!-- Portal Links & Driver Info -->
+            <div class="flex items-center gap-4">
+                <a href="/rider.html" class="text-xs text-zinc-400 hover:text-white transition-colors hidden sm:block">
+                    Passenger Portal
+                </a>
+                <a href="/" class="text-xs text-zinc-400 hover:text-white transition-colors hidden sm:block">
+                    Architecture Hub
+                </a>
+
+                <div class="h-4 w-px bg-zinc-800 hidden sm:block"></div>
+
+                <!-- Duty Toggle -->
+                <button type="button" id="dutyToggleBtn" onclick="toggleDuty()" 
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-medium transition-all cursor-pointer">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+                    <span id="dutyText">ONLINE</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-4xl mx-auto w-full px-6 py-8 flex-1 space-y-6">
+
+        <!-- Driver Profile & Shift Stats -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-850 pb-5">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-12 h-12 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center font-bold text-white text-base">
+                        RK
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-base font-semibold text-white">Ramesh Kumar</h2>
+                            <span class="text-xs font-medium text-amber-400 flex items-center gap-1">
+                                ★ 4.94
+                            </span>
+                        </div>
+                        <div class="text-xs text-zinc-400 font-mono">
+                            Vehicle: Toyota Etios • Plate: <span class="text-zinc-200">KA-01-MJ-4029</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 text-xs font-mono text-zinc-400">
+                    <span>Driver ID:</span>
+                    <span class="text-white font-medium">DRV-804</span>
+                    <span>•</span>
+                    <span class="text-emerald-400">Verified Fleet Partner</span>
+                </div>
+            </div>
+
+            <!-- Shift KPI Metrics -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-5 text-left">
+                <div class="space-y-1">
+                    <div class="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Today's Earnings</div>
+                    <div class="text-xl font-bold font-mono text-white" id="statEarnings">₹2,400.00</div>
+                    <div class="text-[10px] text-emerald-400 font-mono">Guaranteed payout</div>
+                </div>
+                <div class="space-y-1">
+                    <div class="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Trips Completed</div>
+                    <div class="text-xl font-bold font-mono text-white" id="statTrips">2</div>
+                    <div class="text-[10px] text-zinc-400 font-mono">Shared carpools</div>
+                </div>
+                <div class="space-y-1">
+                    <div class="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Acceptance Rate</div>
+                    <div class="text-xl font-bold font-mono text-white">98%</div>
+                    <div class="text-[10px] text-zinc-400 font-mono">Target: &gt;90%</div>
+                </div>
+                <div class="space-y-1">
+                    <div class="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Queue Priority</div>
+                    <div class="text-xl font-bold font-mono text-emerald-400">High</div>
+                    <div class="text-[10px] text-zinc-400 font-mono">Airport Hub Zone</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dispatch Queue / Active Trip Section -->
+        <div class="space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-semibold text-white">Dispatch Queue</h3>
+                    <p class="text-xs text-zinc-400">Real-time ride match offers delivered via Apache Kafka</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs font-mono text-zinc-500">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>/topic/drivers/dispatch</span>
+                </div>
+            </div>
+
+            <!-- Active Dispatch Offer Card (When Kafka proposes a trip) -->
+            <div id="dispatchOfferCard" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 space-y-5 hidden">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-850 pb-4">
+                    <div>
+                        <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
+                            NEW CARPOOL DISPATCH OFFER
+                        </span>
+                        <h4 class="text-base font-semibold text-white mt-1.5">Kempegowda Airport ➔ HSR Layout Corridor</h4>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[10px] text-zinc-500 uppercase tracking-wider">Guaranteed Fare</div>
+                        <div class="text-xl font-bold font-mono text-emerald-400">₹1,200.00</div>
+                    </div>
+                </div>
+
+                <!-- Stop Sequence -->
+                <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-850 space-y-2.5 text-xs font-mono">
+                    <div class="flex items-center gap-2 text-white font-medium">
+                        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-zinc-400"></i>
+                        <span>Pickup: Kempegowda Airport Terminal 1, Pillar 4</span>
+                    </div>
+                    <div id="offerPassengerList" class="pl-4 border-l border-zinc-800 space-y-2 text-zinc-300">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Status Progress Message -->
+                <div class="p-3 rounded-xl bg-zinc-950 border border-zinc-850 text-xs text-zinc-300 font-mono flex items-center justify-between" id="statusBox">
+                    <span id="tripStatusText">Offer received. Click 'Accept Trip' to assign vehicle.</span>
+                    <span class="text-zinc-500 font-mono text-[11px]" id="statusStep">Step 1 of 4</span>
+                </div>
+
+                <!-- Driver Actions -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-medium" id="driverActionsGrid">
+                    <button type="button" id="btnAcceptTrip" onclick="acceptTrip()" 
+                        class="py-2.5 rounded-xl bg-white text-black hover:bg-zinc-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                        <span>Accept Trip</span>
+                    </button>
+                    <button type="button" id="btnMarkArrived" onclick="markArrived()" 
+                        class="py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-500 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+                        <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                        <span>Mark Arrived</span>
+                    </button>
+                    <button type="button" id="btnStartTrip" onclick="startTrip()" 
+                        class="py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-500 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+                        <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                        <span>Start Trip</span>
+                    </button>
+                    <button type="button" id="btnCompleteTrip" onclick="completeTrip()" 
+                        class="py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-500 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+                        <i data-lucide="flag" class="w-3.5 h-3.5"></i>
+                        <span>Complete Trip</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Empty Queue State -->
+            <div id="emptyQueueCard" class="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center space-y-3">
+                <div class="w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center mx-auto text-zinc-400">
+                    <i data-lucide="radio" class="w-5 h-5"></i>
+                </div>
+                <div class="space-y-1">
+                    <h4 class="text-sm font-semibold text-white">Waiting for Airport Carpool Matches</h4>
+                    <p class="text-xs text-zinc-400 max-w-sm mx-auto">
+                        Your terminal is online and listening. When passengers request rides via the 
+                        <a href="/rider.html" target="_blank" class="text-white underline hover:text-zinc-300">Passenger Portal</a>, dispatch proposals will arrive automatically.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-zinc-850 px-6 py-4 text-center text-xs text-zinc-500">
+        CabPool Enterprise Fleet Terminal • Connected to Spring Boot 3 & Kafka Bus
+    </footer>
+
+    <!-- Script -->
+    <script>
+        let stompClient = null;
+        let activeOfferGroupId = null;
+        let isOnline = true;
+        let totalEarnings = 2400.00;
+        let totalTrips = 2;
+
+        function toggleDuty() {
+            isOnline = !isOnline;
+            const btn = document.getElementById('dutyToggleBtn');
+            const text = document.getElementById('dutyText');
+            if (isOnline) {
+                btn.className = "flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-medium transition-all cursor-pointer";
+                btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span><span>ONLINE</span>`;
+            } else {
+                btn.className = "flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-500 text-xs font-mono font-medium transition-all cursor-pointer";
+                btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-zinc-600"></span><span>OFFLINE</span>`;
+            }
+        }
+
+        function connectWebSocket() {
+            const socket = new SockJS('/ws-cabpool');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null;
+            stompClient.connect({}, function () {
+                stompClient.subscribe('/topic/drivers/dispatch', function (msg) {
+                    if (!isOnline) return;
+                    const offer = JSON.parse(msg.body);
+                    handleIncomingDispatch(offer);
+                });
+            }, function () {
+                setTimeout(connectWebSocket, 4000);
+            });
+        }
+
+        function handleIncomingDispatch(offer) {
+            activeOfferGroupId = offer.groupId;
+            document.getElementById('emptyQueueCard').classList.add('hidden');
+            document.getElementById('dispatchOfferCard').classList.remove('hidden');
+
+            const list = document.getElementById('offerPassengerList');
+            list.innerHTML = "";
+            (offer.members || []).forEach(m => {
+                list.innerHTML += `
+                    <div class="flex justify-between items-center text-xs">
+                        <span>Drop ${m.dropOrder}: ${m.dropZone} (${m.dropAddress})</span>
+                        <span class="text-emerald-400 font-medium">₹${m.shareAmount}</span>
+                    </div>
+                `;
+            });
+
+            document.getElementById('tripStatusText').innerText = "Offer received. Click 'Accept Trip' to assign vehicle.";
+            document.getElementById('statusStep').innerText = "Step 1 of 4";
+
+            setButtonState('btnAcceptTrip', true, 'bg-white text-black hover:bg-zinc-200');
+            setButtonState('btnMarkArrived', false);
+            setButtonState('btnStartTrip', false);
+            setButtonState('btnCompleteTrip', false);
+            lucide.createIcons();
+        }
+
+        async function acceptTrip() {
+            if (!activeOfferGroupId) return;
+            try {
+                const res = await fetch(`/api/driver/groups/${activeOfferGroupId}/status?status=ACCEPTED&message=Driver+dispatched+to+Terminal+1+Pillar+4`, { method: 'POST' });
+                if (res.ok) {
+                    document.getElementById('tripStatusText').innerText = "Trip accepted. En route to Terminal 1, Pillar 4.";
+                    document.getElementById('statusStep').innerText = "Step 2 of 4";
+
+                    setButtonState('btnAcceptTrip', false);
+                    setButtonState('btnMarkArrived', true, 'bg-white text-black hover:bg-zinc-200');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function markArrived() {
+            if (!activeOfferGroupId) return;
+            try {
+                const res = await fetch(`/api/driver/groups/${activeOfferGroupId}/status?status=ARRIVED&message=Driver+has+arrived+at+Terminal+1+Pillar+4`, { method: 'POST' });
+                if (res.ok) {
+                    document.getElementById('tripStatusText').innerText = "Arrived at Pillar 4. Passengers notified on their devices.";
+                    document.getElementById('statusStep').innerText = "Step 3 of 4";
+
+                    setButtonState('btnMarkArrived', false);
+                    setButtonState('btnStartTrip', true, 'bg-white text-black hover:bg-zinc-200');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function startTrip() {
+            if (!activeOfferGroupId) return;
+            try {
+                const res = await fetch(`/api/driver/groups/${activeOfferGroupId}/status?status=STARTED&message=Trip+in+progress+toward+HSR+Layout`, { method: 'POST' });
+                if (res.ok) {
+                    document.getElementById('tripStatusText').innerText = "Trip in progress. Navigating towards HSR Layout drop corridor.";
+                    document.getElementById('statusStep').innerText = "Step 4 of 4";
+
+                    setButtonState('btnStartTrip', false);
+                    setButtonState('btnCompleteTrip', true, 'bg-emerald-500 text-black hover:bg-emerald-400');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function completeTrip() {
+            if (!activeOfferGroupId) return;
+            try {
+                const res = await fetch(`/api/driver/groups/${activeOfferGroupId}/status?status=COMPLETED&message=Trip+completed.+Thank+you+for+riding+CabPool.`, { method: 'POST' });
+                if (res.ok) {
+                    totalEarnings += 1200;
+                    totalTrips += 1;
+                    document.getElementById('statEarnings').innerText = `₹${totalEarnings.toFixed(2)}`;
+                    document.getElementById('statTrips').innerText = totalTrips;
+
+                    alert("Trip Completed! ₹1,200.00 credited to driver account.");
+                    document.getElementById('dispatchOfferCard').classList.add('hidden');
+                    document.getElementById('emptyQueueCard').classList.remove('hidden');
+                    activeOfferGroupId = null;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function setButtonState(btnId, enabled, activeClass = "") {
+            const btn = document.getElementById(btnId);
+            if (enabled) {
+                btn.disabled = false;
+                btn.className = `py-2.5 rounded-xl font-medium text-xs ${activeClass} transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm`;
+            } else {
+                btn.disabled = true;
+                btn.className = "py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-500 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed";
+            }
+            lucide.createIcons();
+        }
+
+        window.onload = function() {
+            connectWebSocket();
+            lucide.createIcons();
+        };
+    </script>
+</body>
+</html>

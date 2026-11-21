@@ -3,8 +3,8 @@ package com.cabpool.api.service;
 import com.cabpool.event.EventDelayEvent;
 import com.cabpool.event.GroupProposedEvent;
 import com.cabpool.event.RideConfirmedEvent;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -12,11 +12,15 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class RiderNotificationService {
 
+    private static final Logger log = LoggerFactory.getLogger(RiderNotificationService.class);
+
     private final SimpMessagingTemplate messagingTemplate;
+
+    public RiderNotificationService(SimpMessagingTemplate messagingTemplate) {
+        this.messagingTemplate = messagingTemplate;
+    }
 
     public void notifyRiderOfGroupProposal(UUID userId, GroupProposedEvent event) {
         String destination = "/topic/rider/" + userId;
@@ -71,6 +75,34 @@ public class RiderNotificationService {
                 "groupId", groupId,
                 "status", status,
                 "message", message
+        ));
+    }
+
+    public void notifyDriversOfNewDispatch(GroupProposedEvent event) {
+        String destination = "/topic/drivers/dispatch";
+        log.info("Broadcasting new pool dispatch alert to drivers: Group {}", event.getGroupId());
+        messagingTemplate.convertAndSend(destination, Map.of(
+                "type", "NEW_DISPATCH_OFFER",
+                "groupId", event.getGroupId(),
+                "venue", event.getVenue(),
+                "direction", event.getDirection(),
+                "plannedPickupTime", event.getPlannedPickupTime(),
+                "estTotalFare", event.getEstTotalFare(),
+                "passengerCount", event.getMembers().size(),
+                "members", event.getMembers()
+        ));
+    }
+
+    public void notifyDriverTripUpdate(UUID groupId, String status, String message, String driverName, String vehicleNumber) {
+        String groupDest = "/topic/group/" + groupId;
+        log.info("Broadcasting driver status to group {}: status={}, driver={}", groupId, status, driverName);
+        messagingTemplate.convertAndSend(groupDest, Map.of(
+                "type", "DRIVER_STATUS_UPDATE",
+                "groupId", groupId,
+                "status", status,
+                "message", message,
+                "driverName", driverName != null ? driverName : "Ramesh Kumar",
+                "vehicleNumber", vehicleNumber != null ? vehicleNumber : "KA-01-MJ-4029"
         ));
     }
 }

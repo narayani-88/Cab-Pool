@@ -30,9 +30,9 @@ import java.time.OffsetDateTime;
 import java.util.*;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class MatcherAlgorithmService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MatcherAlgorithmService.class);
 
     private final RedisPoolService redisPoolService;
     private final RideRequestRepository requestRepository;
@@ -40,6 +40,20 @@ public class MatcherAlgorithmService {
     private final RideGroupMemberRepository memberRepository;
     private final UserRepository userRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+
+    public MatcherAlgorithmService(RedisPoolService redisPoolService,
+                                   RideRequestRepository requestRepository,
+                                   RideGroupRepository groupRepository,
+                                   RideGroupMemberRepository memberRepository,
+                                   UserRepository userRepository,
+                                   KafkaTemplate<String, Object> kafkaTemplate) {
+        this.redisPoolService = redisPoolService;
+        this.requestRepository = requestRepository;
+        this.groupRepository = groupRepository;
+        this.memberRepository = memberRepository;
+        this.userRepository = userRepository;
+        this.kafkaTemplate = kafkaTemplate;
+    }
 
     @Value("${cabpool.kafka.topics.ride-matched}")
     private String rideMatchedTopic;
@@ -62,8 +76,25 @@ public class MatcherAlgorithmService {
         redisPoolService.addToActivePool(incoming);
 
         // 2. Query candidates from Redis
-        List<RideRequestedEvent> candidates = redisPoolService.getCandidates(
+        List<RideRequestedEvent> rawCandidates = redisPoolService.getCandidates(
                 incoming.getVenue(), incoming.getDirection(), incoming.getDropZone());
+
+        // Self-healing validation: prune any candidates that are no longer OPEN or already part of a formed group
+        List<RideRequestedEvent> candidates = new ArrayList<>();
+        List<UUID> staleCandidateIds = new ArrayList<>();
+        for (RideRequestedEvent c : rawCandidates) {
+            Optional<RideRequest> reqOpt = requestRepository.findById(c.getRequestId());
+            boolean alreadyInGroup = memberRepository.findByRequestId(c.getRequestId()).isPresent();
+            if (reqOpt.isPresent() && reqOpt.get().getStatus() == RideRequestStatus.OPEN && !alreadyInGroup) {
+                candidates.add(c);
+            } else {
+                staleCandidateIds.add(c.getRequestId());
+            }
+        }
+        if (!staleCandidateIds.isEmpty()) {
+            redisPoolService.removeFromActivePool(incoming.getVenue(), incoming.getDirection(), incoming.getDropZone(), staleCandidateIds);
+            log.warn("Evicted {} stale or already-grouped candidates from Redis pool: {}", staleCandidateIds.size(), staleCandidateIds);
+        }
 
         if (candidates.size() < minGroupSize) {
             long durationMs = System.currentTimeMillis() - startTimeMs;
@@ -113,6 +144,7 @@ public class MatcherAlgorithmService {
 
         } catch (Exception ex) {
             log.error("Error creating group for candidates {}: {}", requestIds, ex.getMessage(), ex);
+            redisPoolService.removeFromActivePool(incoming.getVenue(), incoming.getDirection(), incoming.getDropZone(), requestIds);
         } finally {
             // Safely release locks with Lua script
             redisPoolService.releaseDistributedLocks(requestIds, lockOwner);

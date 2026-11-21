@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - CabPool Mobility</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        zinc: {
+                            950: '#09090b',
+                            900: '#121215',
+                            850: '#18181b',
+                            800: '#27272a',
+                            700: '#3f3f46'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #09090b; color: #fafafa; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-zinc-800 selection:text-white">
+
+    <!-- Minimal Header -->
+    <header class="w-full border-b border-zinc-850 px-6 py-4">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-black font-bold">
+                    <i data-lucide="compass" class="w-4 h-4"></i>
+                </div>
+                <span class="text-base font-semibold tracking-tight text-white">CabPool</span>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-zinc-400">
+                <a href="/" class="hover:text-white transition-colors">Architecture Hub</a>
+                <span>•</span>
+                <span class="text-zinc-500">Enterprise v1.0</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Auth Card -->
+    <main class="w-full flex-1 flex items-center justify-center px-4 py-12">
+        <div class="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-7 shadow-2xl space-y-6">
+
+            <!-- Title -->
+            <div class="space-y-1 text-center">
+                <h1 class="text-xl font-bold tracking-tight text-white">Welcome to CabPool</h1>
+                <p class="text-xs text-zinc-400">Event-driven airport and venue ride-sharing network</p>
+            </div>
+
+            <!-- Role Selector Tabs -->
+            <div class="grid grid-cols-2 p-1 rounded-xl bg-zinc-950 border border-zinc-850 text-xs font-medium">
+                <button type="button" id="tabRider" onclick="switchRole('RIDER')" class="py-2 rounded-lg bg-zinc-800 text-white font-semibold transition-all">
+                    Passenger
+                </button>
+                <button type="button" id="tabDriver" onclick="switchRole('DRIVER')" class="py-2 rounded-lg text-zinc-400 hover:text-white transition-all">
+                    Driver Partner
+                </button>
+            </div>
+
+            <!-- Form -->
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div class="space-y-1.5 text-left">
+                    <label class="text-xs font-medium text-zinc-300">Email Address</label>
+                    <input id="inputEmail" type="email" required placeholder="name@company.com" 
+                        class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 transition-all">
+                </div>
+
+                <div class="space-y-1.5 text-left">
+                    <div class="flex justify-between items-center text-xs">
+                        <label class="font-medium text-zinc-300">Password</label>
+                        <span class="text-[11px] text-zinc-500">Demo enabled</span>
+                    </div>
+                    <input id="inputPassword" type="password" value="••••••••" 
+                        class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-sm text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 transition-all font-mono">
+                </div>
+
+                <button type="submit" id="submitBtn" class="w-full py-2.5 rounded-xl font-medium text-xs bg-white text-black hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm">
+                    <span>Sign In to Dashboard</span>
+                    <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </button>
+            </form>
+
+            <!-- Quick Demo Accounts -->
+            <div class="space-y-2.5 pt-2 border-t border-zinc-800">
+                <div class="flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>Quick Select Demo Profile:</span>
+                    <span class="text-zinc-500 font-mono">1-Click Sign In</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs" id="demoAccountsGrid">
+                    <button type="button" onclick="quickFill('priya.sharma@example.com', 'Priya Sharma', 'FEMALE')" 
+                        class="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all cursor-pointer">
+                        <div class="font-medium text-white truncate">Priya Sharma</div>
+                        <div class="text-[10px] text-zinc-400 truncate">HSR Layout • Verified</div>
+                    </button>
+                    <button type="button" onclick="quickFill('ananya.iyer@example.com', 'Ananya Iyer', 'FEMALE')" 
+                        class="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all cursor-pointer">
+                        <div class="font-medium text-white truncate">Ananya Iyer</div>
+                        <div class="text-[10px] text-zinc-400 truncate">HSR Layout • Verified</div>
+                    </button>
+                    <button type="button" onclick="quickFill('rahul.verma@example.com', 'Rahul Verma', 'MALE')" 
+                        class="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all cursor-pointer">
+                        <div class="font-medium text-white truncate">Rahul Verma</div>
+                        <div class="text-[10px] text-zinc-400 truncate">Whitefield • Commuter</div>
+                    </button>
+                    <button type="button" onclick="quickFillDriver()" 
+                        class="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-left transition-all cursor-pointer">
+                        <div class="font-medium text-amber-400 truncate">Ramesh Kumar</div>
+                        <div class="text-[10px] text-zinc-400 truncate">Driver • Toyota Etios</div>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full border-t border-zinc-850 px-6 py-4 text-center text-xs text-zinc-500">
+        CabPool Enterprise Mobility • Protected by Apache Kafka Event Bus & Redis Distributed Lock
+    </footer>
+
+    <script>
+        let currentRole = 'RIDER';
+
+        function switchRole(role) {
+            currentRole = role;
+            if (role === 'RIDER') {
+                document.getElementById('tabRider').className = "py-2 rounded-lg bg-zinc-800 text-white font-semibold transition-all";
+                document.getElementById('tabDriver').className = "py-2 rounded-lg text-zinc-400 hover:text-white transition-all";
+                document.getElementById('inputEmail').placeholder = "name@company.com";
+                document.getElementById('inputEmail').value = "priya.sharma@example.com";
+            } else {
+                document.getElementById('tabDriver').className = "py-2 rounded-lg bg-zinc-800 text-white font-semibold transition-all";
+                document.getElementById('tabRider').className = "py-2 rounded-lg text-zinc-400 hover:text-white transition-all";
+                document.getElementById('inputEmail').placeholder = "driver@cabpool.com";
+                document.getElementById('inputEmail').value = "ramesh.kumar@cabpool.com";
+            }
+        }
+
+        function quickFill(email, name, gender) {
+            switchRole('RIDER');
+            document.getElementById('inputEmail').value = email;
+            submitLogin(email, name, gender);
+        }
+
+        function quickFillDriver() {
+            switchRole('DRIVER');
+            document.getElementById('inputEmail').value = "ramesh.kumar@cabpool.com";
+            localStorage.setItem('cabpool_driver', JSON.stringify({
+                name: "Ramesh Kumar",
+                vehicle: "Toyota Etios",
+                plateNumber: "KA-01-MJ-4029",
+                rating: 4.94,
+                driverId: "DRV-804"
+            }));
+            window.location.href = '/driver.html';
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('inputEmail').value.trim();
+            if (currentRole === 'DRIVER') {
+                quickFillDriver();
+                return;
+            }
+            await submitLogin(email);
+        }
+
+        async function submitLogin(email, name = null, gender = "FEMALE") {
+            const btn = document.getElementById('submitBtn');
+            btn.innerHTML = `<span>Signing In...</span>`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/users/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, name, gender })
+                });
+
+                if (res.ok) {
+                    const user = await res.json();
+                    localStorage.setItem('cabpool_user', JSON.stringify(user));
+                    window.location.href = '/rider.html';
+                } else {
+                    alert("Authentication failed. Please verify email.");
+                    btn.innerHTML = `<span>Sign In to Dashboard</span><i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>`;
+                    btn.disabled = false;
+                    lucide.createIcons();
+                }
+            } catch (err) {
+                console.error(err);
+                btn.innerHTML = `<span>Sign In to Dashboard</span><i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>`;
+                btn.disabled = false;
+                lucide.createIcons();
+            }
+        }
+
+        window.onload = function() {
+            document.getElementById('inputEmail').value = "priya.sharma@example.com";
+            lucide.createIcons();
+        };
+    </script>
+</body>
+</html>
