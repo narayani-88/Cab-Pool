@@ -44,6 +44,11 @@ public class RideController {
         return ResponseEntity.ok(rideService.acceptGroupProposal(groupId, requestId));
     }
 
+    @PostMapping("/groups/{groupId}/accept-all")
+    public ResponseEntity<RideGroup> acceptAllMembers(@PathVariable UUID groupId) {
+        return ResponseEntity.ok(rideService.acceptAllGroupMembers(groupId));
+    }
+
     @PostMapping("/requests/{requestId}/cancel")
     public ResponseEntity<Void> cancelRequest(
             @PathVariable UUID requestId,

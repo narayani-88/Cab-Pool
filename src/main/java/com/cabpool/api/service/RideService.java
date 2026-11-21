@@ -163,6 +163,51 @@ public class RideService {
         return group;
     }
 
+    @Transactional
+    public RideGroup acceptAllGroupMembers(UUID groupId) {
+        RideGroup group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new IllegalArgumentException("Ride group not found: " + groupId));
+
+        List<RideGroupMember> allMembers = memberRepository.findByRideGroupId(groupId);
+        for (RideGroupMember m : allMembers) {
+            m.setAccepted(true);
+            memberRepository.save(m);
+        }
+
+        group.setStatus(RideGroupStatus.CONFIRMED);
+        groupRepository.save(group);
+
+        List<UUID> confirmedRequestIds = new ArrayList<>();
+        List<UUID> confirmedUserIds = new ArrayList<>();
+
+        for (RideGroupMember m : allMembers) {
+            requestRepository.findById(m.getRequestId()).ifPresent(req -> {
+                req.setStatus(RideRequestStatus.CONFIRMED);
+                requestRepository.save(req);
+                confirmedRequestIds.add(req.getId());
+                confirmedUserIds.add(req.getUserId());
+            });
+        }
+
+        log.info("All members accepted for group {} via confirm-all", groupId);
+
+        // Publish ride.confirmed event to Kafka
+        RideConfirmedEvent confirmedEvent = RideConfirmedEvent.builder()
+                .groupId(groupId)
+                .venue(group.getVenue())
+                .plannedPickupTime(group.getPlannedPickupTime())
+                .totalFare(group.getEstTotalFare())
+                .confirmedRequestIds(confirmedRequestIds)
+                .confirmedUserIds(confirmedUserIds)
+                .build();
+
+        kafkaTemplate.send(rideConfirmedTopic, groupId.toString(), confirmedEvent);
+        log.info("Published RideConfirmedEvent to Kafka topic '{}'", rideConfirmedTopic);
+
+        notificationService.notifyGroupStatusUpdate(groupId, "CONFIRMED", "All riders accepted! Cab is confirmed.");
+        return group;
+    }
+
     /**
      * Cancels a ride request and triggers re-matching for any remaining group members.
      */
