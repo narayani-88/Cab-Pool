@@ -15,7 +15,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/rides")
-@RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class RideController {
 
